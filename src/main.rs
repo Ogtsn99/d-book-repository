@@ -81,15 +81,18 @@
 // cargo run --example d-book-repository_b -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide --path ./sampletext.txt --name sampletext.txt
 
 // GET
-//
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 get --name {file name here!}
 
 use async_std::io;
 use async_std::task::spawn;
 use clap::Parser;
+use dotenv::dotenv;
+use ethers_core::types::{Address, Signature};
 use futures::prelude::*;
 use libp2p::core::{identity, Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
 use std::error::Error;
+use std::env;
 use std::fs;
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -165,6 +168,7 @@ fn get_file_as_byte_vec(filename: String) -> Vec<u8> {
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
+    dotenv().ok();
 
     let opt = Opt::parse();
 
@@ -174,7 +178,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         std::str::from_utf8_unchecked(&file_content)
     };*/
 
-    let (mut network_client, mut network_events, network_event_loop, group) =
+    let (mut network_client, mut network_events, network_event_loop,peerId, group) =
         network::new(opt.secret_key_seed).await?;
 
     spawn(network_event_loop.run(network_client.clone()));
@@ -226,19 +230,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let file_request_value: FileRequestValue = serde_json::from_str(&*request).unwrap();
                         let file = file_request_value.file;
                         let address = file_request_value.address;
-                        let signature = file_request_value.signature;
+                        let signature = Signature::from_str(&*file_request_value.signature).unwrap();
 
-                        println!("request: {}", file);
+                        println!("file: {}", file);
                         println!("address: {}", address);
                         println!("signature: {}", signature);
 
-                        if contents_to_provide.contains(&format!("{}", &file)) {
 
-                            let file_content = get_file_as_byte_vec(format!("./bookshards/{}/{}.{}", &file, &file, group));
 
-                            println!("respond!");
-                            network_client.respond_file(file_content, channel).await;
-                        }
+                        match signature.recover(peerId.to_string()) {
+                            Ok(address) => {
+                                // TODO: check Access Right.
+                                if contents_to_provide.contains(&format!("{}", &file)) {
+
+                                    let file_content = get_file_as_byte_vec(format!("./bookshards/{}/{}.{}", &file, &file, group));
+
+                                    println!("respond!");
+                                    network_client.respond_file(file_content, channel).await;
+                                }
+                            }
+                            _ => {
+                                println!("No");
+                            }
+                        };
                     }
                     e => todo!("{:?}", e),
                 }
@@ -345,8 +359,9 @@ mod network {
     use std::collections::{HashMap, HashSet};
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    use std::iter;
+    use std::{env, iter};
     use std::time::Duration;
+    use ethers_signers::{LocalWallet, Signer};
     use libp2p::gossipsub::{IdentTopic, Topic};
     use libp2p::futures::AsyncWriteExt;
     use libp2p::gossipsub::{Gossipsub, GossipsubEvent, GossipsubMessage, MessageAuthenticity, ValidationMode};
@@ -366,7 +381,7 @@ mod network {
     /// - The network task driving the network itself.
     pub async fn new(
         secret_key_seed: Option<u8>,
-    ) -> Result<(Client, impl Stream<Item = Event>, EventLoop, u64), Box<dyn Error>> {
+    ) -> Result<(Client, impl Stream<Item = Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
         // Create a public/private key pair, either random or based on a seed.
         let id_keys = match secret_key_seed {
             Some(seed) => {
@@ -438,7 +453,7 @@ mod network {
                     Default::default(),
                 ),
             },
-            peer_id,
+            peer_id.clone(),
         )
             .build();
 
@@ -451,6 +466,7 @@ mod network {
             },
             event_receiver,
             EventLoop::new(swarm, command_receiver, event_sender),
+            peer_id,
             group,
         ))
     }
@@ -818,10 +834,16 @@ mod network {
                     peer,
                     sender,
                 } => {
+                    let private_key = env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set");
+                    let wallet = LocalWallet::from_str(&private_key).unwrap();
+
+                    let wallet = LocalWallet::from_str(&private_key).unwrap();
+                    let signature = wallet.sign_message(peer.to_string()).await.unwrap();
+
                     let request_value = FileRequestValue{
                         file: file_name,
-                        address: "address".to_string(),
-                        signature: "signature".to_string(),
+                        address: wallet.address().to_string(),
+                        signature: signature.to_string(),
                     };
 
                     let request_value_string = serde_json::to_string(&request_value).unwrap();
