@@ -76,9 +76,12 @@
 //!
 //! Note: The client does not need to be directly connected to the providing
 //! peer, as long as both are connected to some node on the same DHT.
-
-// cargo run --example d-book-repository_b -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide --path ./sampletext.txt --name sampletext.txt
+// PROVIDE
+// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide --path ./sampletext.txt --name sampletext.txt
 // cargo run --example d-book-repository_b -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide --path ./sampletext.txt --name sampletext.txt
+
+// GET
+//
 
 use async_std::io;
 use async_std::task::spawn;
@@ -93,6 +96,16 @@ use std::path::{Path, PathBuf};
 use proconio::input;
 use std::str::FromStr;
 use std::io::Read;
+use serde::Serialize;
+use serde::Deserialize;
+
+#[derive(Serialize)]
+#[derive(Deserialize)]
+struct FileRequestValue {
+    file: String,
+    address: String,
+    signature: String,
+}
 
 const GROUP_NUMBER: u64 = 40;
 
@@ -209,9 +222,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     // Reply with the content of the file on incoming requests.
                     Some(network::Event::InboundRequest { request, channel }) => {
                         println!("request: {}", request);
-                        if contents_to_provide.contains(&format!("{}", &request)) {
 
-                            let file_content = get_file_as_byte_vec(format!("./bookshards/{}/{}.{}", &request, &request, group));
+                        let file_request_value: FileRequestValue = serde_json::from_str(&*request).unwrap();
+                        let file = file_request_value.file;
+                        let address = file_request_value.address;
+                        let signature = file_request_value.signature;
+
+                        println!("request: {}", file);
+                        println!("address: {}", address);
+                        println!("signature: {}", signature);
+
+                        if contents_to_provide.contains(&format!("{}", &file)) {
+
+                            let file_content = get_file_as_byte_vec(format!("./bookshards/{}/{}.{}", &file, &file, group));
 
                             println!("respond!");
                             network_client.respond_file(file_content, channel).await;
@@ -795,11 +818,19 @@ mod network {
                     peer,
                     sender,
                 } => {
+                    let request_value = FileRequestValue{
+                        file: file_name,
+                        address: "address".to_string(),
+                        signature: "signature".to_string(),
+                    };
+
+                    let request_value_string = serde_json::to_string(&request_value).unwrap();
+
                     let request_id = self
                         .swarm
                         .behaviour_mut()
                         .request_response
-                        .send_request(&peer, FileRequest(file_name));
+                        .send_request(&peer, FileRequest(request_value_string));
                     self.pending_request_file.insert(request_id, sender);
                 }
                 Command::RespondFile { file, channel } => {
