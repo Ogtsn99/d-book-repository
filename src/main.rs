@@ -87,7 +87,11 @@ use async_std::io;
 use async_std::task::spawn;
 use clap::Parser;
 use dotenv::dotenv;
+use ethers::contract::Contract;
+use ethers_core::abi::Abi;
 use ethers_core::types::{Address, Signature};
+use ethers::prelude::Provider;
+use ethers::providers::Http;
 use futures::prelude::*;
 use libp2p::core::{identity, Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
@@ -165,7 +169,13 @@ fn get_file_as_byte_vec(filename: String) -> Vec<u8> {
     buffer
 }
 
-#[async_std::main]
+#[derive(Deserialize)]
+struct ContractData {
+    contractAddress: Address,
+    abi: Abi,
+}
+
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
     dotenv().ok();
@@ -210,6 +220,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .expect("Dial to succeed");
     }
 
+    // create contract instance for mumbai testnet
+    let provider = Provider::<Http>::try_from("https://rpc-mumbai.maticvigil.com").unwrap();
+    let mut f = File::open("./contract.json").expect("no file found");
+    let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
+    let mut buffer = vec![0; metadata.len() as usize];
+    f.read(&mut buffer).expect("buffer overflow");
+
+    let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
+    let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
+
+    let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
+
     match opt.argument {
         // Providing a file.
         CliArgument::Provide { path, name } => {
@@ -236,7 +258,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         println!("address: {}", address);
                         println!("signature: {}", signature);
 
-
+                        let symbol = contract.method::<_, String>("symbol", ()).unwrap().call().await.unwrap();
+                        println!("{:?}", symbol);
 
                         match signature.recover(peerId.to_string()) {
                             Ok(address) => {
