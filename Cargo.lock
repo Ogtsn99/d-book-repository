@@ -1000,6 +1000,7 @@ dependencies = [
  "libp2p",
  "libp2p-request-response",
  "proconio",
+ "rand 0.8.5",
  "serde",
  "serde_json",
  "tokio",

@@ -7,7 +7,10 @@ use ethers_core::types::Signature;
 
 #[async_std::main]
 async fn main() {
-    dotenv().ok();
+
+    let strings: Vec<&str> = "bananas/apples/pear".split("/").collect();
+    println!("{:?}", strings[0]);
+    /*dotenv().ok();
 
     Account::from_str("0x724a077F4A5012744327b1a5a7E2649cdEe26F05");
     let private_key = env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set");
@@ -22,5 +25,5 @@ async fn main() {
         _ => {
                 println!("OMG");
         }
-    };
+    };*/
 }

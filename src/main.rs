@@ -77,11 +77,11 @@
 //! Note: The client does not need to be directly connected to the providing
 //! peer, as long as both are connected to some node on the same DHT.
 // PROVIDE
-// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide --path ./sampletext.txt --name sampletext.txt
-// cargo run --example d-book-repository_b -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide --path ./sampletext.txt --name sampletext.txt
+// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
 
 // GET
-// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 get --name {file name here!}
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40842 --secret-key-seed 3 get --name {file name here!}
 
 use async_std::io;
 use async_std::task::spawn;
@@ -103,8 +103,11 @@ use std::path::{Path, PathBuf};
 use proconio::input;
 use std::str::FromStr;
 use std::io::Read;
+use libp2p::identity::Keypair;
+use rand::Rng;
 use serde::Serialize;
 use serde::Deserialize;
+use crate::identity::ed25519;
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
@@ -169,6 +172,37 @@ fn get_file_as_byte_vec(filename: String) -> Vec<u8> {
     buffer
 }
 
+fn generate_key_Nth_group(n: u64) -> Keypair {
+    let mut rng = rand::thread_rng();
+    let mut bytes = [0u8; 32];
+
+    loop {
+        for i in 0..32 {
+            bytes[i] = rng.gen();
+        }
+
+        let secret_key = ed25519::SecretKey::from_bytes(&mut bytes).expect(
+            "this returns `Err` only if the length is wrong; the length is correct; qed",
+        );
+
+        let local_key = identity::Keypair::Ed25519(secret_key.into());
+
+        let local_peer_id = local_key.clone().public().to_peer_id();
+        let bytes = local_peer_id.to_bytes();
+
+        let mut sum = 0u64;
+        for num in bytes {
+            sum += num as u64;
+        }
+        if sum % GROUP_NUMBER == n {
+            return local_key;
+        } else {
+            continue ;
+        }
+    }
+
+}
+
 #[derive(Deserialize)]
 struct ContractData {
     contractAddress: Address,
@@ -189,7 +223,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };*/
 
     let (mut network_client, mut network_events, network_event_loop,peerId, group) =
-        network::new(opt.secret_key_seed).await?;
+        network::new(opt.secret_key_seed, opt.group).await?;
 
     spawn(network_event_loop.run(network_client.clone()));
 
@@ -234,13 +268,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     match opt.argument {
         // Providing a file.
-        CliArgument::Provide { path, name } => {
+        CliArgument::Provide { .. } => {
 
             let contents_to_provide = read_dir("./bookshards")?;
 
             for content in &contents_to_provide {
-                println!("{}", format!("{}", content.clone()));
-                network_client.start_providing(format!("{}", content.clone())).await;
+                network_client.start_providing(format!("{}.{}", content.clone(), group)).await;
             }
 
             loop {
@@ -254,6 +287,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let address = file_request_value.address;
                         let signature = Signature::from_str(&*file_request_value.signature).unwrap();
 
+                        //println!("{:?}", title);
+
                         println!("file: {}", file);
                         println!("address: {}", address);
                         println!("signature: {}", signature);
@@ -264,13 +299,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         match signature.recover(peerId.to_string()) {
                             Ok(address) => {
                                 // TODO: check Access Right.
-                                if contents_to_provide.contains(&format!("{}", &file)) {
 
-                                    let file_content = get_file_as_byte_vec(format!("./bookshards/{}/{}.{}", &file, &file, group));
+                                println!("{}", file);
+                                let has_ownership = contract.method::<_, bool>("hasOwnership", (address, file.clone())).unwrap().call().await.unwrap();
 
-                                    println!("respond!");
-                                    network_client.respond_file(file_content, channel).await;
+                                match has_ownership {
+                                    true => {
+                                        let file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
+                                        network_client.respond_file(file_content, channel).await;
+                                    },
+                                    _ => {
+                                        println!("No Ownership");
+                                    }
                                 }
+
                             }
                             _ => {
                                 println!("No");
@@ -280,26 +322,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     e => todo!("{:?}", e),
                 }
             }
-
-            /*
-            loop {
-                match network_events.next().await {
-                    // Reply with the content of the file on incoming requests.
-                    Some(network::Event::InboundRequest { request, channel }) => {
-                        if request == name {
-                            let file_content = std::fs::read_to_string(&path)?;
-                            network_client.respond_file(file_content, channel).await;
-                        }
-                    }
-                    e => todo!("{:?}", e),
-                }
-            }*/
         }
 
         // Locating and getting a file.
         CliArgument::Get { name } => {
             // Locate all nodes providing the file.
-            let providers = network_client.get_providers(format!("{}.shards", name.clone())).await;
+            // TODO グループ番号の指定
+            let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 7)).await;
+            //let providers2 = network_client.get_providers(format!("{}.shards.{}", name.clone(), 23)).await;
+
             if providers.is_empty() {
                 return Err(format!("Could not find provider for file {}.", name).into());
             }
@@ -308,22 +339,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let requests = providers.into_iter().map(|p| {
                 let mut network_client = network_client.clone();
                 let name = name.clone();
-                async move { network_client.request_file(p, format!("{}.shards", name.clone())).await }.boxed()
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
             });
+
+            /*if providers2.is_empty() {
+                return Err(format!("Could not find provider for file {}.", name).into());
+            }
+
+            // Request the content of the file from each node.
+            let requests2 = providers2.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+
+
+            let file2 = futures::future::select_ok(requests2)
+                .await;*/
 
             // Await the requests, ignore the remaining once a single one succeeds.
             let file = futures::future::select_ok(requests)
                 .await;
+
             let res = match file {
                 Err(why) => panic!("{:?}", why),
                 Ok(file) => {
                     file.0
                 },
             };
-                /*.map_err(|_| "None of the providers returned file.")?
-                .0;*/
+
+            /*
+            let res2 = match file2 {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };*/
 
             println!("Content of file {},  file len:{:?}", name, res.len());
+            //println!("Content of file {},  file len:{:?}", name, res2.len());
+
         }
     }
 
@@ -338,6 +393,9 @@ struct Opt {
     secret_key_seed: Option<u8>,
 
     #[clap(long)]
+    group: Option<u64>,
+
+    #[clap(long)]
     peer: Option<Multiaddr>,
 
     #[clap(long)]
@@ -350,10 +408,6 @@ struct Opt {
 #[derive(Debug, Parser)]
 enum CliArgument {
     Provide {
-        #[clap(long)]
-        path: PathBuf,
-        #[clap(long)]
-        name: String,
     },
     Get {
         #[clap(long)]
@@ -404,6 +458,7 @@ mod network {
     /// - The network task driving the network itself.
     pub async fn new(
         secret_key_seed: Option<u8>,
+        group: Option<u64>
     ) -> Result<(Client, impl Stream<Item = Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
         // Create a public/private key pair, either random or based on a seed.
         let id_keys = match secret_key_seed {
@@ -415,7 +470,16 @@ mod network {
                 );
                 identity::Keypair::Ed25519(secret_key.into())
             }
-            None => identity::Keypair::generate_ed25519(),
+            None => {
+                match group {
+                    Some(group) => {
+                        generate_key_Nth_group(group.try_into().unwrap())
+                    }
+                    None => {
+                        identity::Keypair::generate_ed25519()
+                    }
+                }
+            },
         };
 
         let peer_id = id_keys.public().to_peer_id();
@@ -472,7 +536,6 @@ mod network {
                 request_response: RequestResponse::new(
                     FileExchangeCodec(),
                     iter::once((FileExchangeProtocol(), ProtocolSupport::Full)),
-                    // TODO: ここを帰る必要があるかも
                     Default::default(),
                 ),
             },
@@ -858,7 +921,6 @@ mod network {
                     sender,
                 } => {
                     let private_key = env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set");
-                    let wallet = LocalWallet::from_str(&private_key).unwrap();
 
                     let wallet = LocalWallet::from_str(&private_key).unwrap();
                     let signature = wallet.sign_message(peer.to_string()).await.unwrap();

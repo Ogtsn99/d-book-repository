@@ -23,6 +23,7 @@ ethers-signers = "0.13.0"
 ethers-core = "0.13.0"
 dotenv = "0.15.0"
 web3 = "0.18.0"
+rand = "0.8.5"
 
 [[default-run]]
 path = "src/main.rs"
@@ -38,3 +39,7 @@ path = "src/try_ether.rs"
 [[bin]]
 name = "signature"
 path = "src/signature.rs"
+
+[[bin]]
+name = "set_provider"
+path = "src/set_provider.rs"
