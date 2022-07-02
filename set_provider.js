@@ -5,8 +5,8 @@ async function main() {
     let port = 40838;
 
     console.log('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide');
-
-    /*exec('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide', (err, stdout, stderr) => {
+    /*
+    exec('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide', (err, stdout, stderr) => {
             if (err) {
                 console.log(`stderr: ${stderr}`)
                 return
@@ -15,11 +15,12 @@ async function main() {
         }
     )*/
 
-    for (let i = 2; i <= 40; i++) {
-        const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-        await _sleep(2000);
+    const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    await _sleep(2000);
 
-        let command = `cargo run -- --peer ${nodeEndpoints[0]} --listen-address /ip4/127.0.0.1/tcp/${port} --secret-key-seed ${i} provide`;
+    for (let i = 0; i < 40; i++) {
+
+        let command = `cargo run -- --peer ${nodeEndpoints[0]} --listen-address /ip4/127.0.0.1/tcp/${port} --group ${i} provide`;
 
         console.log(command);
         exec(command, (err, stdout, stderr) => {
@@ -35,7 +36,6 @@ async function main() {
     }
 
 
-    console.log("yay");
 }
 
 main();

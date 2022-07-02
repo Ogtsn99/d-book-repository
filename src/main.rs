@@ -84,6 +84,7 @@
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40842 --secret-key-seed 3 get --name {file name here!}
 
 use async_std::io;
+use rand::seq::SliceRandom;
 use async_std::task::spawn;
 use clap::Parser;
 use dotenv::dotenv;
@@ -103,6 +104,8 @@ use std::path::{Path, PathBuf};
 use proconio::input;
 use std::str::FromStr;
 use std::io::Read;
+use std::iter::Map;
+use futures::future::{BoxFuture, SelectOk};
 use libp2p::identity::Keypair;
 use rand::Rng;
 use serde::Serialize;
@@ -324,42 +327,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        // Locating and getting a file.
         CliArgument::Get { name } => {
             // Locate all nodes providing the file.
             // TODO グループ番号の指定
-            let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 7)).await;
-            //let providers2 = network_client.get_providers(format!("{}.shards.{}", name.clone(), 23)).await;
+
+            let mut v = (0..40).collect::<Vec<u8>>();
+            let mut rng = rand::thread_rng();
+            v.shuffle(&mut rng);
+
+            println!("{:?}", v);
+
+
+            let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 25)).await;
 
             if providers.is_empty() {
                 return Err(format!("Could not find provider for file {}.", name).into());
             }
 
-            // Request the content of the file from each node.
             let requests = providers.into_iter().map(|p| {
                 let mut network_client = network_client.clone();
                 let name = name.clone();
                 async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
             });
 
-            /*if providers2.is_empty() {
-                return Err(format!("Could not find provider for file {}.", name).into());
-            }
-
-            // Request the content of the file from each node.
-            let requests2 = providers2.into_iter().map(|p| {
-                let mut network_client = network_client.clone();
-                let name = name.clone();
-                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
-            });
-
-
-            let file2 = futures::future::select_ok(requests2)
-                .await;*/
-
-            // Await the requests, ignore the remaining once a single one succeeds.
-            let file = futures::future::select_ok(requests)
-                .await;
+            let file = futures::future::select_ok(requests).await;
 
             let res = match file {
                 Err(why) => panic!("{:?}", why),
@@ -368,17 +359,340 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
             };
 
+            println!("{}", res.len());
+
             /*
-            let res2 = match file2 {
+            let providers1 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[0])).await;
+            let providers2 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[1])).await;
+            let providers3 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[2])).await;
+            let providers4 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[3])).await;
+            let providers5 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[4])).await;
+            let providers6 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[5])).await;
+            let providers7 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[6])).await;
+            let providers8 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[7])).await;
+            let providers9 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[8])).await;
+            let providers10 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[9])).await;
+            let providers11 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[10])).await;
+            let providers12 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[11])).await;
+            let providers13 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[12])).await;
+            let providers14 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[13])).await;
+            let providers15 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[14])).await;
+            let providers16 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[15])).await;
+            let providers17 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[16])).await;
+            let providers18 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[17])).await;
+            let providers19 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[18])).await;
+            let providers20 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[19])).await;
+
+
+
+            if providers1.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[0]).into());
+            }
+            if providers2.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[1]).into());
+            }
+            if providers3.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[2]).into());
+            }
+            if providers4.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[3]).into());
+            }
+            if providers5.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[4]).into());
+            }
+            if providers6.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[5]).into());
+            }
+            if providers7.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[6]).into());
+            }
+            if providers8.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[7]).into());
+            }
+            if providers9.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[8]).into());
+            }
+            if providers10.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[9]).into());
+            }
+            if providers11.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[10]).into());
+            }
+            if providers12.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[11]).into());
+            }
+            if providers13.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[12]).into());
+            }
+            if providers14.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[13]).into());
+            }
+            if providers15.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[14]).into());
+            }
+            if providers16.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[15]).into());
+            }
+            if providers17.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[16]).into());
+            }
+            if providers18.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[17]).into());
+            }
+            if providers19.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[18]).into());
+            }
+            if providers20.is_empty() {
+                return Err(format!("Could not find provider for file {}.{}", name, v[19]).into());
+            }
+
+            // Request the content of the file from each node.
+            let requests1 = providers1.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests2 = providers2.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests3 = providers3.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests4 = providers4.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests5 = providers5.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests6 = providers6.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests7 = providers7.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests8 = providers8.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests9 = providers9.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests10 = providers10.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests11 = providers11.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests12 = providers12.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests13 = providers13.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests14 = providers14.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests15 = providers15.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests16 = providers16.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests17 = providers17.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests18 = providers18.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests19 = providers19.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+            let requests20 = providers20.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            });
+
+
+
+
+            let res1 = match futures::future::select_ok(requests1)
+                .await {
                 Err(why) => panic!("{:?}", why),
                 Ok(file) => {
                     file.0
                 },
-            };*/
+            };
+            let res2 = match futures::future::select_ok(requests2)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res3 = match futures::future::select_ok(requests3)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res4 = match futures::future::select_ok(requests4)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res5 = match futures::future::select_ok(requests5)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res6 = match futures::future::select_ok(requests6)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res7 = match futures::future::select_ok(requests7)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res8 = match futures::future::select_ok(requests8)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res9 = match futures::future::select_ok(requests9)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res10 = match futures::future::select_ok(requests10)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res11 = match futures::future::select_ok(requests11)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res12 = match futures::future::select_ok(requests12)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res13 = match futures::future::select_ok(requests13)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res14 = match futures::future::select_ok(requests14)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res15 = match futures::future::select_ok(requests15)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res16 = match futures::future::select_ok(requests16)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res17 = match futures::future::select_ok(requests17)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res18 = match futures::future::select_ok(requests18)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res19 = match futures::future::select_ok(requests19)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+            let res20 = match futures::future::select_ok(requests20)
+                .await {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
 
-            println!("Content of file {},  file len:{:?}", name, res.len());
-            //println!("Content of file {},  file len:{:?}", name, res2.len());
-
+            println!("yay");*/
         }
     }
 
