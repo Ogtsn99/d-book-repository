@@ -2,3 +2,6 @@
 /bookshards
 
 .DS_Store
+
+.env
+/download

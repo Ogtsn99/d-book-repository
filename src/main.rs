@@ -81,7 +81,7 @@
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
 
 // GET
-// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40842 --secret-key-seed 3 get --name {file name here!}
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40942 --secret-key-seed 99 get --name {file name here!}
 
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -111,6 +111,8 @@ use rand::Rng;
 use serde::Serialize;
 use serde::Deserialize;
 use crate::identity::ed25519;
+use serde::ser::StdError;
+use reed_solomon_erasure::galois_8::ReedSolomon;
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
@@ -121,6 +123,7 @@ struct FileRequestValue {
 }
 
 const GROUP_NUMBER: u64 = 40;
+const REQUIRED_SHARDS: u64 = 20;
 
 fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
     Ok(fs::read_dir(path)?
@@ -230,8 +233,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     spawn(network_event_loop.run(network_client.clone()));
 
-    //network_client.searchPeers();
-
     // In case a listen address was provided use it, otherwise listen on any
     // address.
     match opt.listen_address {
@@ -308,7 +309,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                 match has_ownership {
                                     true => {
-                                        let file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
+                                        let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
+                                        file_content.push(group as u8);
                                         network_client.respond_file(file_content, channel).await;
                                     },
                                     _ => {
@@ -328,19 +330,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         CliArgument::Get { name } => {
+
             // Locate all nodes providing the file.
             // TODO グループ番号の指定
 
-            let mut v = (0..40).collect::<Vec<u8>>();
-            let mut rng = rand::thread_rng();
-            v.shuffle(&mut rng);
-
-            println!("{:?}", v);
-
-
             let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 25)).await;
 
-            if providers.is_empty() {
+
+            /*if providers.is_empty() {
                 return Err(format!("Could not find provider for file {}.", name).into());
             }
 
@@ -359,7 +356,74 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 },
             };
 
+            println!("{}", res.len());*/
+
+            // Locate all nodes providing the file.
+            // TODO グループ番号の指定
+
+            /*let mut v = (0..40).collect::<Vec<u8>>();
+            let mut rng = rand::thread_rng();
+            v.shuffle(&mut rng);
+
+            println!("ランダム 40C20 {:?}", v);*/
+
+            let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
+            let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
+
+            let file_name = name.clone();
+
+            let requests_ = async move { network_client.get_shards(file_name).await }.boxed();
+
+            let results = requests_.await;
+
+            for result in results {
+                let mut v = result.unwrap();
+                let group = v[v.len() - 1];
+                v.pop();
+                println!("group: {}, size:{}", group, v.len());
+                shards[group as usize] = Some(v);
+            }
+
+            r.reconstruct_data(&mut shards).unwrap();
+
+            //println!("{:?}", shards);
+
+            let mut file = Vec::<u8>::new();
+
+            for (i, shard) in shards.into_iter().enumerate() {
+                if i == REQUIRED_SHARDS as usize {
+                    break;
+                }
+                file.append(&mut shard.unwrap());
+            }
+
+            std::fs::write(name, file).unwrap();
+            /*
+            let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 25)).await;
+
+            let providers = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[0])).await;
+
+            if providers.is_empty() {
+                return Err(format!("Could not find provider for file {}.", name).into());
+            }
+
+            let requests = providers.into_iter().map(|p| {
+                let mut network_client = network_client.clone();
+                let name = name.clone();
+                async move { network_client.request_file(p, format!("{}", name.clone())).await }.boxed()
+            };
+
+            let file = futures::future::select_ok(requests).await;
+
+            let res = match file {
+                Err(why) => panic!("{:?}", why),
+                Ok(file) => {
+                    file.0
+                },
+            };
+
             println!("{}", res.len());
+               */
 
             /*
             let providers1 = network_client.clone().get_providers(format!("{}.shards.{}", name.clone(), v[0])).await;
@@ -750,7 +814,7 @@ mod network {
     use std::collections::{HashMap, HashSet};
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
-    use std::{env, iter};
+    use std::{env, iter, thread, time};
     use std::time::Duration;
     use ethers_signers::{LocalWallet, Signer};
     use libp2p::gossipsub::{IdentTopic, Topic};
@@ -928,6 +992,15 @@ mod network {
             receiver.await.expect("Sender not to be dropped.")
         }
 
+        pub async fn get_peers(&mut self) -> HashSet<PeerId> {
+            let (sender, receiver) = oneshot::channel();
+            self.sender
+                .send(Command::GetPeers { sender })
+                .await
+                .expect("Command receiver not to be dropped.");
+            receiver.await.expect("Sender not to be dropped.")
+        }
+
         /// Request the content of the given file from the given peer.
         pub async fn request_file(
             &mut self,
@@ -946,6 +1019,38 @@ mod network {
             receiver.await.expect("Sender not be dropped.")
         }
 
+        /// Request the content of the given file from the given peer.
+        pub async fn get_shards(
+            &mut self,
+            file_name: String,
+        ) -> Vec<Result<Vec<u8>, Box<dyn Error + Send>>> {
+
+            let mut senders = Vec::new();
+            let mut receivers = Vec::new();
+
+            for _ in 0..20 {
+                let (sender, receiver) = oneshot::channel();
+                senders.push(sender);
+                receivers.push(receiver);
+            }
+
+            self.sender
+                .send(Command::GetShards {
+                    file_name,
+                    senders,
+                })
+                .await
+                .expect("Command receiver not to be dropped.");
+
+            let mut res = Vec::new();
+
+            for receiver in receivers.into_iter() {
+                res.push(receiver.await.expect("Sender not be dropped."));
+            }
+
+            res
+        }
+
         /// Respond with the provided file content to the given request.
         pub async fn respond_file(&mut self, file: Vec<u8>, channel: ResponseChannel<FileResponse>) {
             self.sender
@@ -962,6 +1067,7 @@ mod network {
         event_sender: mpsc::Sender<Event>,
         pending_dial: HashMap<PeerId, oneshot::Sender<Result<(), Box<dyn Error + Send>>>>,
         pending_start_providing: HashMap<QueryId, oneshot::Sender<()>>,
+        pending_get_peers: HashMap<QueryId, oneshot::Sender<HashSet<PeerId>>>,
         pending_get_providers: HashMap<QueryId, oneshot::Sender<HashSet<PeerId>>>,
         pending_request_file:
         HashMap<RequestId, oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>>,
@@ -981,6 +1087,7 @@ mod network {
                 event_sender,
                 pending_dial: Default::default(),
                 pending_start_providing: Default::default(),
+                pending_get_peers: Default::default(),
                 pending_get_providers: Default::default(),
                 pending_request_file: Default::default(),
             }
@@ -1014,6 +1121,7 @@ mod network {
                             }
                         }
                         if s == "search" {
+                            println!("search");
                             self.swarm.behaviour_mut().kademlia.get_closest_peers(to_search);
                         }
                     }
@@ -1221,6 +1329,16 @@ mod network {
                         .expect("No store error.");
                     self.pending_start_providing.insert(query_id, sender);
                 }
+
+                Command::GetPeers { sender } => {
+                    /*let query_id = self
+                        .swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .get_providers(file_name.into_bytes().into());
+                    self.pending_get_providers.insert(query_id, sender);*/
+                }
+
                 Command::GetProviders { file_name, sender } => {
                     let query_id = self
                         .swarm
@@ -1229,6 +1347,76 @@ mod network {
                         .get_providers(file_name.into_bytes().into());
                     self.pending_get_providers.insert(query_id, sender);
                 }
+
+                Command::GetShards {
+                    file_name,
+                    senders,
+                } => {
+
+                    let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
+                    //self.swarm.behaviour_mut().kademlia.get_closest_peers(to_search);
+
+                    let private_key = env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set");
+
+                    let wallet = LocalWallet::from_str(&private_key).unwrap();
+
+                    let peers_iter = self.swarm.connected_peers();
+
+                    let mut peers = Vec::new();
+
+                    for peer in peers_iter {
+                        peers.push(peer.clone());
+                    }
+
+                    let mut senders_iter = senders.into_iter();
+
+                    let mut cnt = 0;
+                    let mut requested = vec![false; GROUP_NUMBER as usize];
+
+                    let mut request_ids = Vec::new();
+
+                    println!("peers: {:?}", peers);
+
+                    for peer in peers {
+                        if cnt >= 20 {
+                            break;
+                        }
+                        let bytes = peer.to_bytes();
+                        let mut sum = 0u64;
+                        for num in bytes {
+                            sum += num as u64;
+                        }
+                        let group = sum % GROUP_NUMBER;
+                        if !requested[group as usize] {
+                            let signature = wallet.sign_message(peer.to_string()).await.unwrap();
+                            let request_value = FileRequestValue{
+                                file: file_name.clone(),
+                                address: wallet.address().to_string(),
+                                signature: signature.to_string(),
+                            };
+                            let request_value_string = serde_json::to_string(&request_value).unwrap();
+
+                            let request_id = self
+                                .swarm
+                                .behaviour_mut()
+                                .request_response
+                                .send_request(&peer, FileRequest(request_value_string.clone()));
+
+                            request_ids.push(request_id);
+
+                            requested[group as usize] = true;
+                            cnt += 1;
+                        }
+                    }
+
+                    cnt = 0;
+
+                    for sender in senders_iter {
+                        self.pending_request_file.insert(request_ids[cnt], sender);
+                        cnt += 1;
+                    }
+                }
+
                 Command::RequestFile {
                     file_name,
                     peer,
@@ -1326,9 +1514,16 @@ mod network {
             file_name: String,
             sender: oneshot::Sender<()>,
         },
+        GetPeers {
+            sender: oneshot::Sender<HashSet<PeerId>>,
+        },
         GetProviders {
             file_name: String,
             sender: oneshot::Sender<HashSet<PeerId>>,
+        },
+        GetShards {
+            file_name: String,
+            senders: Vec<oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>>,
         },
         RequestFile {
             file_name: String,
