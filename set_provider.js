@@ -4,7 +4,7 @@ async function main() {
     let nodeEndpoints = ["/ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X"];
     let port = 40838;
 
-    console.log('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide');
+    //console.log('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide');
     /*
     exec('cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide', (err, stdout, stderr) => {
             if (err) {
