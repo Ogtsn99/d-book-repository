@@ -83,6 +83,9 @@
 // GET
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40942 --secret-key-seed 99 get --name {file name here!}
 
+// UPLOAD
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/45943 --secret-key-seed 199 upload --name {file name here!}
+
 use async_std::io;
 use rand::seq::SliceRandom;
 use async_std::task::spawn;
@@ -222,28 +225,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let opt = Opt::parse();
 
-    /*
-    let file_content = get_file_as_byte_vec("./bookshards/Go.pdf.shards/Go.pdf.shards.0".to_string());
-    let s = unsafe {
-        std::str::from_utf8_unchecked(&file_content)
-    };*/
+    let mut is_provider = false;
+
+    if let CliArgument::Provide {} = opt.argument {
+        is_provider = true;
+    }
 
     let (mut network_client, mut network_events, network_event_loop,peerId, group) =
-        network::new(opt.secret_key_seed, opt.group).await?;
+        network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
     spawn(network_event_loop.run(network_client.clone()));
 
     // In case a listen address was provided use it, otherwise listen on any
     // address.
     match opt.listen_address {
-        Some(addr) => network_client
-            .start_listening(addr)
-            .await
-            .expect("Listening not to fail."),
-        None => network_client
-            .start_listening("/ip4/0.0.0.0/tcp/0".parse()?)
-            .await
-            .expect("Listening not to fail."),
+        Some(addr) => {
+            network_client
+                .start_listening(addr)
+                .await
+                .expect("Listening not to fail.");
+        },
+        None => {
+            network_client
+                .start_listening("/ip4/0.0.0.0/tcp/0".parse()?)
+                .await
+                .expect("Listening not to fail.");
+        },
     };
 
     // In case the user provided an address of a peer on the CLI, dial it.
@@ -273,12 +280,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match opt.argument {
         // Providing a file.
         CliArgument::Provide { .. } => {
-
-            let contents_to_provide = read_dir("./bookshards")?;
-
-            for content in &contents_to_provide {
-                network_client.start_providing(format!("{}.{}", content.clone(), group)).await;
-            }
 
             loop {
                 match network_events.next().await {
@@ -310,6 +311,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 match has_ownership {
                                     true => {
                                         let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
+                                        println!("send file size:{}", file_content.len());
                                         file_content.push(group as u8);
                                         network_client.respond_file(file_content, channel).await;
                                     },
@@ -368,6 +370,27 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             std::fs::write(format!("download/{}", name), file).unwrap();
         }
+
+        CliArgument::Upload { name } => {
+            for i in 0..40 {
+                let providers = network_client.get_providers(format!("sample.txt.shards.{}", i)).await;
+            }
+
+            let mut shards = Vec::new();
+
+            for num in 0..GROUP_NUMBER {
+                let buffer = get_file_as_byte_vec(format!("./uploads/{}.shards/{}.shards.{}", name, name, num));
+                //tokio::spawn(async move { network_client.upload_file(buffer, num as u8).await });
+                shards.push(buffer);
+            }
+            //network_client.upload_shards(shards, ).await;
+
+            //network_client.upload_file(get_file_as_byte_vec(name), 22).await;
+            network_client.upload_shards(shards).await;
+
+            loop {
+            }
+        }
     }
 
     Ok(())
@@ -398,6 +421,10 @@ enum CliArgument {
     Provide {
     },
     Get {
+        #[clap(long)]
+        name: String,
+    },
+    Upload {
         #[clap(long)]
         name: String,
     },
@@ -446,7 +473,8 @@ mod network {
     /// - The network task driving the network itself.
     pub async fn new(
         secret_key_seed: Option<u8>,
-        group: Option<u64>
+        group: Option<u64>,
+        is_provider: bool
     ) -> Result<(Client, impl Stream<Item = Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
         // Create a public/private key pair, either random or based on a seed.
         let id_keys = match secret_key_seed {
@@ -495,7 +523,7 @@ mod network {
             MessageId::from(s.finish().to_string())
         };
 
-        let topic = IdentTopic::new("test-net");
+        //let topic = IdentTopic::new("testnet");
 
         // Set a custom gossipsub
         let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
@@ -503,6 +531,7 @@ mod network {
             .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the
             // same content will be propagated.
+            .max_transmit_size(6_000_000)
             .build()
             .expect("Valid config");
         // build a gossipsub network behaviour
@@ -510,12 +539,15 @@ mod network {
             gossipsub::Gossipsub::new(MessageAuthenticity::Signed(id_keys.clone()), gossipsub_config)
                 .expect("Correct configuration");
 
-        // subscribes to our topic
-        gossipsub.subscribe(&topic).unwrap();
+        gossipsub.subscribe(&IdentTopic::new("testnet")).unwrap();
+
+        if is_provider {
+            gossipsub.subscribe(&IdentTopic::new(format!("testnet-{}", group))).unwrap();
+        }
 
         // Build the Swarm, connecting the lower layer transport logic with the
         // higher layer network behaviour logic.
-        let swarm = SwarmBuilder::new(
+        let mut swarm = SwarmBuilder::new(
             libp2p::development_transport(id_keys).await?,
             ComposedBehaviour {
                 gossipsub,
@@ -563,6 +595,16 @@ mod network {
                 .expect("Command receiver not to be dropped.");
             receiver.await.expect("Sender not to be dropped.")
         }
+
+        /*pub async fn add_kademlia(
+            &mut self,
+            peer_id: PeerId,
+            addr: Multiaddr
+        ) {
+            self.sender
+                .send(Command::AddKademlia { peer_id, addr })
+                .await;
+        }*/
 
         /// Dial the given peer at the given address.
         pub async fn dial(
@@ -668,6 +710,24 @@ mod network {
                 .await
                 .expect("Command receiver not to be dropped.");
         }
+        pub async fn upload_file(&mut self, file: Vec<u8>, group: u8) {
+            self.sender
+                .send(Command::UploadFile {file, group})
+                .await
+                .expect("Command receiver not to be dropped")
+        }
+
+        pub async fn upload_shards(&mut self, shards: Vec<Vec<u8>>) {
+            self.sender
+                .send(Command::UploadShards {shards})
+                .await
+                .expect("Command receiver not to be dropped")
+            /*
+            self.sender
+                .send(Command::UploadFile { file, group })
+                .await
+                .expect("Command receiver not to be dropped");*/
+        }
     }
 
     pub struct EventLoop {
@@ -759,14 +819,16 @@ mod network {
                                                                    propagation_source: peer_id,
                                                                    message_id: id,
                                                                    message,
-                                                               })) => println!(
-                    "Got message: {} with id: {} from peer: {:?}",
-                    String::from_utf8_lossy(&message.data),
-                    id,
-                    peer_id
-                ),
+                                                               })) => {
+                    println!("Got message: {} with id: {} from peer: {:?}", &message.data.len(), id, peer_id);
 
-                SwarmEvent::Behaviour(ComposedEvent::GossipSub(_)) => {}
+                    /*println!(
+                        "Got message: {} with id: {} from peer: {:?}",
+                        String::from_utf8_lossy(&message.data),
+                        id,
+                        peer_id
+                    )*/
+                },
 
                 SwarmEvent::Behaviour(ComposedEvent::Kademlia(
                                           KademliaEvent::OutboundQueryCompleted {
@@ -899,6 +961,9 @@ mod network {
 
         async fn handle_command(&mut self, command: Command) {
             match command {
+                /*Command::AddKademlia {peer_id, addr, sender} => {
+                    self.swarm.behaviour_mut().kademlia.add_address(&peer_id,addr);
+                },*/
                 Command::StartListening { addr, sender } => {
                     let _ = match self.swarm.listen_on(addr) {
                         Ok(_) => sender.send(Ok(())),
@@ -1059,6 +1124,38 @@ mod network {
                         .send_response(channel, FileResponse(file))
                         .expect("Connection to peer to be still open.");
                 }
+                Command::UploadFile { file, group } => {
+
+                    let topic = IdentTopic::new(format!("testnet-{}", group));
+                    //let topic = IdentTopic::new("testnet");
+
+                    for peer_data in self.swarm
+                        .behaviour_mut()
+                        .gossipsub.all_peers() {
+                        println!("{:?}, {:?}", peer_data.0, peer_data.1);
+                    }
+
+                    /*self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .*/
+
+                    self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(topic.clone(), file)
+                        .expect("publish file failed.");
+                },
+                Command::UploadShards {shards} => {
+                    for (i, shard) in shards.into_iter().enumerate() {
+                        let topic = IdentTopic::new(format!("testnet-{}", i));
+                        self.swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .publish(topic, shard)
+                            .expect("publish file succeeded.");
+                    }
+                }
                 /*Command::SearchPeers {sender} => {
                     println!("search peer");
                     let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
@@ -1111,6 +1208,10 @@ mod network {
 
     #[derive(Debug)]
     enum Command {
+        /*AddKademlia {
+            peer_id: PeerId,
+            addr: Multiaddr,
+        },*/
         StartListening {
             addr: Multiaddr,
             sender: oneshot::Sender<Result<(), Box<dyn Error + Send>>>,
@@ -1144,6 +1245,13 @@ mod network {
             file: Vec<u8>,
             channel: ResponseChannel<FileResponse>,
         },
+        UploadFile {
+            file: Vec<u8>,
+            group: u8,
+        },
+        UploadShards {
+            shards: Vec<Vec<u8>>,
+        }
         /*SearchPeers {
             sender: oneshot::Sender<()>,
         }*/
