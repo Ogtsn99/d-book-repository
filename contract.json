@@ -1,5 +1,5 @@
 {
-  "contractAddress": "0xCB92cdf8a0A17049814525E72006D029d770a8F5",
+  "contractAddress": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
   "abi": [
     {
       "inputs": [
@@ -351,7 +351,7 @@
           "type": "string"
         }
       ],
-      "name": "hasOwnership",
+      "name": "hasAccessRight",
       "outputs": [
         {
           "internalType": "bool",

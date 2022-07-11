@@ -117,6 +117,7 @@ use serde::Deserialize;
 use crate::identity::ed25519;
 use serde::ser::StdError;
 use reed_solomon_erasure::galois_8::ReedSolomon;
+use ethers_signers::{LocalWallet, Signer};
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
@@ -137,6 +138,14 @@ struct FileResponseValue {
 #[derive(Deserialize)]
 struct Proof {
     proof: Vec<String>
+}
+
+#[derive(Serialize)]
+#[derive(Deserialize)]
+struct FileUploadValue {
+    file_name: String,
+    file: Vec<u8>,
+    proof: Vec<u8>,
 }
 
 const GROUP_NUMBER: u64 = 40;
@@ -262,7 +271,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut network_client, mut network_events, network_event_loop,peerId, group) =
         network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
-    spawn(network_event_loop.run(network_client.clone()));
+    tokio::spawn(network_event_loop.run(network_client.clone()));
 
     // In case a listen address was provided use it, otherwise listen on any
     // address.
@@ -294,7 +303,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // create contract instance for mumbai testnet
-    let provider = Provider::<Http>::try_from("https://rpc-mumbai.maticvigil.com").unwrap();
+    let provider = Provider::<Http>::try_from("http://127.0.0.1:8545/").unwrap();
     let mut f = File::open("./contract.json").expect("no file found");
     let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
@@ -305,9 +314,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
 
+    let root = contract.method::<_, String>("merkleRootOf", "sample.txt".to_string()).unwrap().call().await.unwrap();
+    println!("{}", root);
+
     match opt.argument {
         // Providing a file.
         CliArgument::Provide { .. } => {
+
+            let contents_to_provide = read_dir("./bookshards")?;
+
+            for content in &contents_to_provide {
+                println!("{}", format!("{}", content.clone()));
+                network_client.start_providing(format!("{}", content.clone())).await;
+            }
 
             loop {
                 match network_events.next().await {
@@ -334,9 +353,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 // TODO: check Access Right.
 
                                 println!("{}", file);
-                                let has_ownership = contract.method::<_, bool>("hasOwnership", (address, file.clone())).unwrap().call().await.unwrap();
+                                let has_accessRight = contract.method::<_, bool>("hasAccessRight", (address, file.clone())).unwrap().call().await.unwrap();
 
-                                match has_ownership {
+                                match has_accessRight {
                                     true => {
                                         let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
 
@@ -373,11 +392,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             for i in 0..20 {
                 let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), i)).await;
                 if providers.len() == 0 {
-                    println!("OMG");
                 }
             }
 
-            let root = contract.method::<_, String>("merkleRootOf", (name.clone())).unwrap().call().await.unwrap();
+            let root = contract.method::<_, String>("merkleRootOf", name.clone()).unwrap().call().await.unwrap();
 
             let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
             let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
@@ -432,8 +450,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             for num in 0..GROUP_NUMBER {
                 let buffer = get_file_as_byte_vec(format!("./uploads/{}.shards/{}.shards.{}", name, name, num));
+                let proof = get_file_as_byte_vec(format!("./uploads/{}.shards/{}.proofs.{}", name, name, num));
+
+                let file_upload_value: FileUploadValue = FileUploadValue{
+                    file_name: name.clone(),
+                    file: buffer,
+                    proof
+                };
+                let data = String::into_bytes(serde_json::to_string(&file_upload_value).unwrap());
                 //tokio::spawn(async move { network_client.upload_file(buffer, num as u8).await });
-                shards.push(buffer);
+                shards.push(data);
             }
             //network_client.upload_shards(shards, ).await;
 
@@ -874,6 +900,30 @@ mod network {
                                                                })) => {
                     println!("Got message: {} with id: {} from peer: {:?}", &message.data.len(), id, peer_id);
 
+                    let upload: FileUploadValue = serde_json::from_str(&String::from_utf8(message.data).unwrap()).unwrap();
+
+                    let provider = Provider::<Http>::try_from("http://127.0.0.1:8545/").unwrap();
+                    let mut f = File::open("./contract.json").expect("no file found");
+                    let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
+                    let mut buffer = vec![0; metadata.len() as usize];
+                    f.read(&mut buffer).expect("buffer overflow");
+                    let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
+                    let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
+                    let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
+
+                    println!("root mae, {}", upload.file_name);
+                    let root = contract.method::<_, String>("merkleRootOf", upload.file_name).unwrap().call().await.unwrap();
+
+                    println!("root, {}", root);
+                    let proof: Proof = serde_json::from_str(&String::from_utf8(upload.proof).unwrap()).unwrap();
+
+                    let ok = check_proof(sha256::digest_bytes(&upload.file), &proof.proof, &root);
+                    if ok {
+                        println!("OK");
+                    } else {
+                        println!("No");
+                    }
+
                     /*println!(
                         "Got message: {} with id: {} from peer: {:?}",
                         String::from_utf8_lossy(&message.data),
@@ -926,7 +976,7 @@ mod network {
                             .any(|p| p.as_bytes() == kad::protocol::DEFAULT_PROTO_NAME)
                         {
                             for addr in listen_addrs {
-                                println!("{:?}, {:?}", peer_id, addr);
+                                println!("Identify event received {:?}, {:?}", peer_id, addr);
                                 self.swarm
                                     .behaviour_mut()
                                     .kademlia
@@ -991,6 +1041,7 @@ mod network {
                             let _ = sender.send(Ok(()));
                         }
                     }
+                    // TODO: ここでGetShard, Uploadタスクの実行はできるか
                 }
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
                     println!("Connection Closed with {:?}", peer_id);
@@ -1176,7 +1227,6 @@ mod network {
                         .expect("Connection to peer to be still open.");
                 }
                 Command::UploadFile { file, group } => {
-
                     let topic = IdentTopic::new(format!("testnet-{}", group));
                     //let topic = IdentTopic::new("testnet");
 
@@ -1185,11 +1235,6 @@ mod network {
                         .gossipsub.all_peers() {
                         println!("{:?}, {:?}", peer_data.0, peer_data.1);
                     }
-
-                    /*self.swarm
-                        .behaviour_mut()
-                        .gossipsub
-                        .*/
 
                     self.swarm
                         .behaviour_mut()
@@ -1200,11 +1245,12 @@ mod network {
                 Command::UploadShards {shards} => {
                     for (i, shard) in shards.into_iter().enumerate() {
                         let topic = IdentTopic::new(format!("testnet-{}", i));
+
                         self.swarm
                             .behaviour_mut()
                             .gossipsub
                             .publish(topic, shard)
-                            .expect("publish file succeeded.");
+                            .expect("publish file failed.");
                     }
                 }
                 /*Command::SearchPeers {sender} => {

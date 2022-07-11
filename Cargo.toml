@@ -35,13 +35,5 @@ name = "main"
 path = "src/main.rs"
 
 [[bin]]
-name = "get_files"
-path = "src/try_ether.rs"
-
-[[bin]]
-name = "signature"
-path = "src/signature.rs"
-
-[[bin]]
-name = "set_provider"
-path = "src/set_provider.rs"
+name = "erasureCoding"
+path = "src/erasureCoding.rs"
