@@ -25,6 +25,7 @@ dotenv = "0.15.0"
 web3 = "0.18.0"
 rand = "0.8.5"
 reed-solomon-erasure = "5.0.3"
+sha256 = "1.0.3"
 
 [[default-run]]
 path = "src/main.rs"

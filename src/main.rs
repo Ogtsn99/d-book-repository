@@ -99,6 +99,7 @@ use ethers::providers::Http;
 use futures::prelude::*;
 use libp2p::core::{identity, Multiaddr, PeerId};
 use libp2p::multiaddr::Protocol;
+use sha256;
 use std::error::Error;
 use std::env;
 use std::fs;
@@ -123,6 +124,19 @@ struct FileRequestValue {
     file: String,
     address: String,
     signature: String,
+}
+
+#[derive(Serialize)]
+#[derive(Deserialize)]
+struct FileResponseValue {
+    file: Vec<u8>,
+    proof: Vec<u8>,
+    group: u8,
+}
+
+#[derive(Deserialize)]
+struct Proof {
+    proof: Vec<String>
 }
 
 const GROUP_NUMBER: u64 = 40;
@@ -209,7 +223,21 @@ fn generate_key_Nth_group(n: u64) -> Keypair {
             continue ;
         }
     }
+}
 
+fn calc_hash_from_two(s1: &String, s2: &String) -> String {
+    if s1 < s2 {
+        sha256::digest(s1.clone() + &*s2.clone())
+    } else {
+        sha256::digest(s2.clone() + &*s1.clone())
+    }
+}
+
+fn check_proof(mut s1: String, proofs: &Vec<String>, root: &String) -> bool {
+    for proof in proofs {
+        s1 = calc_hash_from_two(&s1, proof);
+    }
+    s1 == *root
 }
 
 #[derive(Deserialize)]
@@ -311,9 +339,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                                 match has_ownership {
                                     true => {
                                         let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
-                                        println!("send file size:{}", file_content.len());
-                                        file_content.push(group as u8);
-                                        network_client.respond_file(file_content, channel).await;
+
+                                        let mut file_proof = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.proofs.{}", &file, &file, group));
+
+                                        let response: FileResponseValue = FileResponseValue{ file: file_content, proof: file_proof, group: group as u8};
+
+                                        let response_json_result = serde_json::to_string(&response).unwrap();
+                                        let response_bytes = response_json_result.into_bytes();
+
+                                        network_client.respond_file(response_bytes, channel).await;
                                     },
                                     _ => {
                                         println!("No Ownership");
@@ -334,9 +368,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         CliArgument::Get { name } => {
 
             // Locate all nodes providing the file.
-            // TODO グループ番号の指定
+            // TODO  GETがよく失敗するのを直す。おそらくpeerの捜索にもっと効率的な方法が求められる
 
-            let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), 0)).await;
+            for i in 0..20 {
+                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), i)).await;
+                if providers.len() == 0 {
+                    println!("OMG");
+                }
+            }
+
+            let root = contract.method::<_, String>("merkleRootOf", (name.clone())).unwrap().call().await.unwrap();
 
             let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
             let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
@@ -349,10 +390,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
             for result in results {
                 let mut v = result.unwrap();
-                let group = v[v.len() - 1];
-                v.pop();
-                println!("group: {}, size:{}", group, v.len());
-                shards[group as usize] = Some(v);
+
+                let file_response_value: FileResponseValue = serde_json::from_str(&String::from_utf8(v).unwrap()).unwrap();
+
+                let file = file_response_value.file;
+                let proof_string = String::from_utf8(file_response_value.proof).unwrap();
+                let proof: Proof = serde_json::from_str(&proof_string).unwrap();
+
+                if !check_proof(sha256::digest_bytes(&file), &proof.proof, &root) {
+                    println!("invalid merkle proof");
+                }
+
+                let group = file_response_value.group;
+
+                println!("group: {}, size:{}", group, file.len());
+                shards[group as usize] = Some(file);
             }
 
             r.reconstruct_data(&mut shards).unwrap();
@@ -1027,7 +1079,6 @@ mod network {
                     file_name,
                     senders,
                 } => {
-
                     let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
                     //self.swarm.behaviour_mut().kademlia.get_closest_peers(to_search);
 
