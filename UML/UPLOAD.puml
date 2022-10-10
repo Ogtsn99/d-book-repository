@@ -1,0 +1,12 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+Author --> Author: split book file into 40 shards
+Author --> Author: build Merkle tree from shards
+Author --> Contract: register(contentName,\n price, merkleRoot)
+Author --> "d-book-repository": Upload Shards & Merkle Proofs\nwith contentName
+"d-book-repository" --> Contract: get Merkle Root
+"d-book-repository" --> "d-book-repository": verify Merkle Proofs
+"d-book-repository" --> "d-book-repository": save them in storage
+@enduml

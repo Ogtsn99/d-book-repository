@@ -136,7 +136,9 @@ fn main () {
 
     fs::create_dir(format!("{}.shards", &args[1]));
 
+    let start_calc_Merkle_tree = Instant::now();
     calcMerkleTree(master_copy.clone(), &args[1]);
+    println!("calc merkle took {} ms", start_calc_Merkle_tree.elapsed().as_millis());
 
     for (i, v) in master_copy.iter().enumerate() {
         std::fs::write(format!("{}.shards/{}.shards.{}", &args[1], &args[1], i.to_string()), v).unwrap();

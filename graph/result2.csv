@@ -1,0 +1,5 @@
+1MB,10MB,100MB
+FindNodes,482,549,461
+DownloadShards,486,2319,21021
+VerifyMerkleProof,83,660,6432
+Decode,53,514,5128

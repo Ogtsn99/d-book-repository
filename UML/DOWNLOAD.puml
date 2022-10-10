@@ -1,0 +1,14 @@
+@startuml
+'https://plantuml.com/sequence-diagram
+
+autonumber
+Reader --> Contract: mint NFT with ether\nequal to the price
+Contract --> Contract: grant Access Right to Reader, \n send Author ether
+Reader --> "d-book-repository": send requests to 20 storageNodes with contentName, \nethreumAddress, Sig(EthereumPrivateKey, storageNodeId)
+"d-book-repository" --> "d-book-repository": verify Sig
+"d-book-repository" --> Contract: check Access Right
+"d-book-repository" --> Reader: send 20 shards and Merkle Proofs \n from 20 storageNodes
+Reader --> Contract: get Merkle Root
+Reader --> Reader: verify Merkle Proofs
+Reader --> Reader: Decode shards into \n original content file
+@enduml

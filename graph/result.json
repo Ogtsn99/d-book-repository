@@ -1,0 +1,20 @@
+{
+  "1MB": {
+    "FindNodes": 482,
+    "DownloadShards": 486,
+    "VerifyMerkleProof": 83,
+    "Decode": 53
+  },
+  "10MB": {
+    "FindNodes": 549,
+    "DownloadShards": 2319,
+    "VerifyMerkleProof": 660,
+    "Decode": 514
+  },
+  "100MB": {
+    "FindNodes": 461,
+    "DownloadShards": 21021,
+    "VerifyMerkleProof": 6432,
+    "Decode": 5128
+  }
+}

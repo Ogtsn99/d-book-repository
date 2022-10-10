@@ -86,6 +86,7 @@
 // UPLOAD
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/45943 --secret-key-seed 199 upload --name {file name here!}
 
+use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
 use async_std::task::spawn;
@@ -118,6 +119,7 @@ use crate::identity::ed25519;
 use serde::ser::StdError;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use ethers_signers::{LocalWallet, Signer};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
@@ -271,7 +273,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut network_client, mut network_events, network_event_loop,peerId, group) =
         network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
-    tokio::spawn(network_event_loop.run(network_client.clone()));
+    tokio::spawn(network_event_loop.run(network_client.clone(), group.clone() as u8));
 
     // In case a listen address was provided use it, otherwise listen on any
     // address.
@@ -314,9 +316,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
 
-    let root = contract.method::<_, String>("merkleRootOf", "sample.txt".to_string()).unwrap().call().await.unwrap();
-    println!("{}", root);
-
     match opt.argument {
         // Providing a file.
         CliArgument::Provide { .. } => {
@@ -324,8 +323,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let contents_to_provide = read_dir("./bookshards")?;
 
             for content in &contents_to_provide {
-                println!("{}", format!("{}", content.clone()));
-                network_client.start_providing(format!("{}", content.clone())).await;
+                println!("{}", format!("{}.{}", content.clone(), group));
+                network_client.start_providing(format!("{}.{}", content.clone(), group)).await;
             }
 
             loop {
@@ -385,26 +384,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
 
         CliArgument::Get { name } => {
+            let start = Instant::now();
+            let mut cand = (0..40).collect::<Vec<u8>>();
 
-            // Locate all nodes providing the file.
-            // TODO  GETがよく失敗するのを直す。おそらくpeerの捜索にもっと効率的な方法が求められる
+            let mut rng = rand::thread_rng();
 
-            for i in 0..20 {
-                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), i)).await;
+            cand.shuffle(&mut rng);
+
+            println!("{:?}", cand);
+
+            for (i, group) in cand.iter().enumerate() {
+                if i == 20 {
+                    break;
+                }
+                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
                 if providers.len() == 0 {
+                    println!("{} is not found", group);
                 }
             }
 
-            let root = contract.method::<_, String>("merkleRootOf", name.clone()).unwrap().call().await.unwrap();
+            let find_peer_time = start.elapsed().as_millis();
 
-            let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
             let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
 
+            // ファイルダウンロード
+            let start_downloading = Instant::now();
             let file_name = name.clone();
 
             let requests_ = async move { network_client.get_shards(file_name).await }.boxed();
 
             let results = requests_.await;
+
+            let mut proofs = HashMap::new();
 
             for result in results {
                 let mut v = result.unwrap();
@@ -415,19 +426,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let proof_string = String::from_utf8(file_response_value.proof).unwrap();
                 let proof: Proof = serde_json::from_str(&proof_string).unwrap();
 
-                if !check_proof(sha256::digest_bytes(&file), &proof.proof, &root) {
-                    println!("invalid merkle proof");
-                }
-
                 let group = file_response_value.group;
+                //println!("group insert {}", group);
+                proofs.insert(group, proof);
+                //println!("{:?}", proofs.get(&group).unwrap().proof);
 
                 println!("group: {}, size:{}", group, file.len());
                 shards[group as usize] = Some(file);
             }
 
-            r.reconstruct_data(&mut shards).unwrap();
+            let downloading_time = start_downloading.elapsed().as_millis();
 
-            //println!("{:?}", shards);
+            // ハッシュ値の確認
+            let start_checking_hash = Instant::now();
+            let root = contract.method::<_, String>("merkleRootOf", name.clone()).unwrap().call().await.unwrap();
+            for (group, shard) in shards.iter().enumerate() {
+                match shard {
+                    Some(x) => {
+                        println!("group get from {}", group);
+                        if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
+                            println!("Invalid hashes or proofs");
+                        }
+                    },
+                    None => { }
+                }
+            }
+
+            let checking_hash_time = start_checking_hash.elapsed().as_millis();
+
+            // 復元
+            let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
+            let start_decoding = Instant::now();
+            r.reconstruct_data(&mut shards).unwrap();
 
             let mut file = Vec::<u8>::new();
 
@@ -438,14 +468,269 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 file.append(&mut shard.unwrap());
             }
 
+            let decoding_time = start_decoding.elapsed().as_millis();
+
+            let start_saving = Instant::now();
+            // 保存
             std::fs::write(format!("download/{}", name), file).unwrap();
+            let saving_time = start_saving.elapsed().as_millis();
+
+            println!("find peers {} ms", find_peer_time);
+            println!("リクエストからダウンロードまで: {}", downloading_time);
+            println!("ハッシュ確認: {}", checking_hash_time);
+            println!("復元: {}", decoding_time);
+            println!("保存: {}", saving_time);
+            println!("合計: {}", start.elapsed().as_millis());
+        }
+
+        CliArgument::Get2 { name } => {
+            let start = Instant::now();
+            let mut cand = (0..40).collect::<Vec<u8>>();
+
+            let mut rng = rand::thread_rng();
+
+            cand.shuffle(&mut rng);
+
+            println!("{:?}", cand);
+
+            let mut groups = Vec::new();
+
+            for (i, group) in cand.iter().enumerate() {
+                if groups.len() == 20 {
+                    break;
+                }
+                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
+                if providers.len() == 0 {
+                    println!("{} is not found", group);
+                } else {
+                    groups.push(cand[i]);
+                }
+            }
+
+            let find_peer_time = start.elapsed().as_millis();
+
+            let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
+
+            // ファイルダウンロード
+            let start_downloading = Instant::now();
+            let mut file_names = Vec::new();
+            for i in 0..20 {
+                file_names.push(name.clone());
+            }
+            let mut file_iter = file_names.into_iter();
+
+            let mut joins = Vec::new();
+            for group in groups {
+                let mut network_client_clone = network_client.clone();
+                let file_name = file_iter.next().unwrap();
+                let join = tokio::task::spawn(async move { network_client_clone.get_shard(file_name, group).await }.boxed());
+                joins.push(join);
+            }
+
+            let mut results = Vec::new();
+
+            for join in joins {
+                results.push(join.await?);
+            }
+
+            let mut proofs = HashMap::new();
+
+            for result in results {
+                let mut v = result.unwrap();
+
+                let file_response_value: FileResponseValue = serde_json::from_str(&String::from_utf8(v).unwrap()).unwrap();
+
+                let file = file_response_value.file;
+                let proof_string = String::from_utf8(file_response_value.proof).unwrap();
+                let proof: Proof = serde_json::from_str(&proof_string).unwrap();
+
+                let group = file_response_value.group;
+                //println!("group insert {}", group);
+                proofs.insert(group, proof);
+                //println!("{:?}", proofs.get(&group).unwrap().proof);
+
+                println!("group: {}, size:{}", group, file.len());
+                shards[group as usize] = Some(file);
+            }
+
+            let downloading_time = start_downloading.elapsed().as_millis();
+
+            // ハッシュ値の確認
+            let start_checking_hash = Instant::now();
+            let root = contract.method::<_, String>("merkleRootOf", name.clone()).unwrap().call().await.unwrap();
+            for (group, shard) in shards.iter().enumerate() {
+                match shard {
+                    Some(x) => {
+                        println!("group get from {}", group);
+                        if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
+                            println!("Invalid hashes or proofs");
+                        }
+                    },
+                    None => { }
+                }
+            }
+
+            let checking_hash_time = start_checking_hash.elapsed().as_millis();
+
+            // 復元
+            let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
+            let start_decoding = Instant::now();
+            r.reconstruct_data(&mut shards).unwrap();
+
+            let mut file = Vec::<u8>::new();
+
+            for (i, shard) in shards.into_iter().enumerate() {
+                if i == REQUIRED_SHARDS as usize {
+                    break;
+                }
+                file.append(&mut shard.unwrap());
+            }
+
+            let decoding_time = start_decoding.elapsed().as_millis();
+
+            let start_saving = Instant::now();
+            // 保存
+            std::fs::write(format!("download/{}", name), file).unwrap();
+            let saving_time = start_saving.elapsed().as_millis();
+
+            println!("find peers {} ms", find_peer_time);
+            println!("リクエストからダウンロードまで: {}", downloading_time);
+            println!("ハッシュ確認: {}", checking_hash_time);
+            println!("復元: {}", decoding_time);
+            println!("保存: {}", saving_time);
+            println!("合計: {}", start.elapsed().as_millis());
+        }
+
+        CliArgument::Get3 { name } => {
+            let start = Instant::now();
+            let mut cand = (0..40).collect::<Vec<u8>>();
+
+            let mut rng = rand::thread_rng();
+
+            cand.shuffle(&mut rng);
+
+            println!("{:?}", cand);
+
+            let mut groups = Vec::new();
+
+            for (i, group) in cand.iter().enumerate() {
+                if groups.len() == 20 {
+                    break;
+                }
+                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
+                if providers.len() == 0 {
+                    println!("{} is not found", group);
+                } else {
+                    groups.push(cand[i]);
+                }
+            }
+
+            let find_peer_time = start.elapsed().as_millis();
+
+            let mut shards: Vec<_> = vec![None; GROUP_NUMBER as usize];
+
+            // ファイルダウンロード
+            let start_downloading = Instant::now();
+            let mut file_names = Vec::new();
+            for i in 0..20 {
+                file_names.push(name.clone());
+            }
+            let mut file_iter = file_names.into_iter();
+
+
+            let mut results = Vec::new();
+
+            for group in groups {
+                let mut network_client_clone = network_client.clone();
+                let file_name = file_iter.next().unwrap();
+                let request_ = async move { network_client_clone.get_shard(file_name, group).await }.boxed();
+                results.push(request_.await);
+            }
+
+            let mut proofs = HashMap::new();
+
+            for result in results {
+                let mut v = result.unwrap();
+
+                let file_response_value: FileResponseValue = serde_json::from_str(&String::from_utf8(v).unwrap()).unwrap();
+
+                let file = file_response_value.file;
+                let proof_string = String::from_utf8(file_response_value.proof).unwrap();
+                let proof: Proof = serde_json::from_str(&proof_string).unwrap();
+
+                let group = file_response_value.group;
+                //println!("group insert {}", group);
+                proofs.insert(group, proof);
+                //println!("{:?}", proofs.get(&group).unwrap().proof);
+
+                println!("group: {}, size:{}", group, file.len());
+                shards[group as usize] = Some(file);
+            }
+
+            let downloading_time = start_downloading.elapsed().as_millis();
+
+            // ハッシュ値の確認
+            let start_checking_hash = Instant::now();
+            let root = contract.method::<_, String>("merkleRootOf", name.clone()).unwrap().call().await.unwrap();
+            for (group, shard) in shards.iter().enumerate() {
+                match shard {
+                    Some(x) => {
+                        println!("group get from {}", group);
+                        if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
+                            println!("Invalid hashes or proofs");
+                        }
+                    },
+                    None => { }
+                }
+            }
+
+            let checking_hash_time = start_checking_hash.elapsed().as_millis();
+
+            // 復元
+            let r = ReedSolomon::new(REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize).unwrap();
+            let start_decoding = Instant::now();
+            r.reconstruct_data(&mut shards).unwrap();
+
+            let mut file = Vec::<u8>::new();
+
+            for (i, shard) in shards.into_iter().enumerate() {
+                if i == REQUIRED_SHARDS as usize {
+                    break;
+                }
+                file.append(&mut shard.unwrap());
+            }
+
+            let decoding_time = start_decoding.elapsed().as_millis();
+
+            let start_saving = Instant::now();
+            // 保存
+            std::fs::write(format!("download/{}", name), file).unwrap();
+            let saving_time = start_saving.elapsed().as_millis();
+
+            println!("find peers {} ms", find_peer_time);
+            println!("リクエストからダウンロードまで: {}", downloading_time);
+            println!("ハッシュ確認: {}", checking_hash_time);
+            println!("復元: {}", decoding_time);
+            println!("保存: {}", saving_time);
+            println!("合計: {}", start.elapsed().as_millis());
         }
 
         CliArgument::Upload { name } => {
-            for i in 0..40 {
-                let providers = network_client.get_providers(format!("sample.txt.shards.{}", i)).await;
+            let start_find_peer = Instant::now();
+
+            for group in 0..40 {
+                let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
+                if providers.len() == 0 {
+                    println!("{} is not found", group);
+                } else {
+                    println!("{} is found", group);
+                }
             }
 
+            let find_peer_time = start_find_peer.elapsed().as_millis();
+            //network_client.get_providers(format!("sample.txt.shards.{}", i)).await;
+
+            let start_uploading = Instant::now();
             let mut shards = Vec::new();
 
             for num in 0..GROUP_NUMBER {
@@ -464,8 +749,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
             //network_client.upload_shards(shards, ).await;
 
             //network_client.upload_file(get_file_as_byte_vec(name), 22).await;
+            let start = SystemTime::now();
+            let since_the_epoch = start
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards");
+            println!("since_the_epoch");
+            println!("start uploading at {:?}", since_the_epoch);
             network_client.upload_shards(shards).await;
+            let uploading_time = start_uploading.elapsed().as_millis();
 
+            println!("find peer {}", find_peer_time);
             loop {
             }
         }
@@ -499,6 +792,14 @@ enum CliArgument {
     Provide {
     },
     Get {
+        #[clap(long)]
+        name: String,
+    },
+    Get2 {
+        #[clap(long)]
+        name: String,
+    },
+    Get3 {
         #[clap(long)]
         name: String,
     },
@@ -609,7 +910,7 @@ mod network {
             .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the
             // same content will be propagated.
-            .max_transmit_size(6_000_000)
+            .max_transmit_size(6_000_000_000_000)
             .build()
             .expect("Valid config");
         // build a gossipsub network behaviour
@@ -781,6 +1082,26 @@ mod network {
             res
         }
 
+        pub async fn get_shard(
+            &mut self,
+            file_name: String,
+            group: u8,
+        ) -> Result<Vec<u8>, Box<dyn Error + Send>> {
+            println!("get shard, group: {}", group);
+            let (sender, receiver) = oneshot::channel();
+
+            self.sender
+                .send(Command::GetShard {
+                    file_name,
+                    group,
+                    sender,
+                })
+                .await
+                .expect("Command receiver not to be dropped.");
+
+            receiver.await.expect("Sender not be dropped.")
+        }
+
         /// Respond with the provided file content to the given request.
         pub async fn respond_file(&mut self, file: Vec<u8>, channel: ResponseChannel<FileResponse>) {
             self.sender
@@ -788,6 +1109,7 @@ mod network {
                 .await
                 .expect("Command receiver not to be dropped.");
         }
+
         pub async fn upload_file(&mut self, file: Vec<u8>, group: u8) {
             self.sender
                 .send(Command::UploadFile {file, group})
@@ -841,7 +1163,7 @@ mod network {
             }
         }
 
-        pub async fn run(mut self/*, mut client: Client*/, client: Client) {
+        pub async fn run(mut self/*, mut client: Client*/, client: Client, group: u8) {
             let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
             let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
@@ -874,13 +1196,12 @@ mod network {
                         }
                     }
 
-                    event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite.")).await  ,
+                    event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite."), group).await  ,
                     command = self.command_receiver.next() => match command {
                         Some(c) => self.handle_command(c).await,
                         // Command channel closed, thus shutting down the network event loop.
                         None=>  return,
                     },
-
                 }
             }
         }
@@ -890,7 +1211,8 @@ mod network {
             event: SwarmEvent<
                 ComposedEvent,
                 EitherError<EitherError<EitherError<GossipsubHandlerError, ConnectionHandlerUpgrErr<std::io::Error>>, std::io::Error>, std::io::Error>,
-            >
+            >,
+            group: u8
         ) {
             match event {
                 SwarmEvent::Behaviour(ComposedEvent::GossipSub(GossipsubEvent::Message {
@@ -901,6 +1223,9 @@ mod network {
                     println!("Got message: {} with id: {} from peer: {:?}", &message.data.len(), id, peer_id);
 
                     let upload: FileUploadValue = serde_json::from_str(&String::from_utf8(message.data).unwrap()).unwrap();
+                    let received_message_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards");
 
                     let provider = Provider::<Http>::try_from("http://127.0.0.1:8545/").unwrap();
                     let mut f = File::open("./contract.json").expect("no file found");
@@ -912,7 +1237,7 @@ mod network {
                     let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
 
                     println!("root mae, {}", upload.file_name);
-                    let root = contract.method::<_, String>("merkleRootOf", upload.file_name).unwrap().call().await.unwrap();
+                    let root = contract.method::<_, String>("merkleRootOf", upload.file_name.clone()).unwrap().call().await.unwrap();
 
                     println!("root, {}", root);
                     let proof: Proof = serde_json::from_str(&String::from_utf8(upload.proof).unwrap()).unwrap();
@@ -924,6 +1249,18 @@ mod network {
                         println!("No");
                     }
 
+                    let check_hash_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards");
+
+                    std::fs::write(format!("storage/{}.{}", upload.file_name, group), upload.file).unwrap();
+
+                    let save_file_at = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards");
+
+                    std::fs::write("time", format!("received:{:?}, check hash:{:?}, save file:{:?}",
+                                                   received_message_at, check_hash_at, save_file_at)).unwrap();
                     /*println!(
                         "Got message: {} with id: {} from peer: {:?}",
                         String::from_utf8_lossy(&message.data),
@@ -1041,6 +1378,7 @@ mod network {
                             let _ = sender.send(Ok(()));
                         }
                     }
+
                     // TODO: ここでGetShard, Uploadタスクの実行はできるか
                 }
                 SwarmEvent::ConnectionClosed { peer_id, .. } => {
@@ -1194,6 +1532,53 @@ mod network {
                     }
                 }
 
+                Command::GetShard {
+                    file_name,
+                    group,
+                    sender,
+                } => {
+                    let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
+                    //self.swarm.behaviour_mut().kademlia.get_closest_peers(to_search);
+
+                    let private_key = env::var("PRIVATE_KEY").expect("PRIVATE_KEY must be set");
+
+                    let wallet = LocalWallet::from_str(&private_key).unwrap();
+
+                    let peers_iter = self.swarm.connected_peers();
+
+                    let mut peers = Vec::new();
+
+                    for peer in peers_iter {
+                        peers.push(peer.clone());
+                    }
+
+                    for peer in peers {
+                        let bytes = peer.to_bytes();
+                        let mut sum = 0u64;
+                        for num in bytes {
+                            sum += num as u64;
+                        }
+                        let group_ = sum % GROUP_NUMBER;
+                        if group_ as u8 == group {
+                            let signature = wallet.sign_message(peer.to_string()).await.unwrap();
+                            let request_value = FileRequestValue{
+                                file: file_name.clone(),
+                                address: wallet.address().to_string(),
+                                signature: signature.to_string(),
+                            };
+                            let request_value_string = serde_json::to_string(&request_value).unwrap();
+                            let request_id = self
+                                .swarm
+                                .behaviour_mut()
+                                .request_response
+                                .send_request(&peer, FileRequest(request_value_string.clone()));
+
+                            self.pending_request_file.insert(request_id, sender);
+                            break;
+                        }
+                    }
+                }
+
                 Command::RequestFile {
                     file_name,
                     peer,
@@ -1333,6 +1718,11 @@ mod network {
             file_name: String,
             senders: Vec<oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>>,
         },
+        GetShard {
+            file_name: String,
+            group: u8,
+            sender: oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>
+        },
         RequestFile {
             file_name: String,
             peer: PeerId,
@@ -1363,7 +1753,6 @@ mod network {
     }
 
     // Simple file exchange protocol
-
     #[derive(Debug, Clone)]
     struct FileExchangeProtocol();
     #[derive(Clone)]
@@ -1393,7 +1782,7 @@ mod network {
             where
                 T: AsyncRead + Unpin + Send,
         {
-            let vec = read_length_prefixed(io, 1_000_000).await?;
+            let vec = read_length_prefixed(io, 1_000_000_000).await?;
 
             if vec.is_empty() {
                 return Err(io::ErrorKind::UnexpectedEof.into());
