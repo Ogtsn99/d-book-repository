@@ -93,6 +93,13 @@
 //
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/0.0.0.0/tcp/40942 --secret-key-seed 99 get --name 1MB_Sample
 
+mod types;
+mod file;
+
+use crate::types::file_request_value::FileRequestValue;
+use crate::types::file_response_value::FileResponseValue;
+use crate::types::proof::Proof;
+use crate::types::file_upload_value::FileUploadValue;
 use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -127,91 +134,10 @@ use serde::ser::StdError;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
-#[derive(Serialize)]
-#[derive(Deserialize)]
-struct FileRequestValue {
-    file: String,
-    address: String,
-    signature: String,
-}
-
-#[derive(Serialize)]
-#[derive(Deserialize)]
-struct FileResponseValue {
-    file: Vec<u8>,
-    proof: Vec<u8>,
-    group: u8,
-}
-
-#[derive(Deserialize)]
-struct Proof {
-    proof: Vec<String>
-}
-
-#[derive(Serialize)]
-#[derive(Deserialize)]
-struct FileUploadValue {
-    file_name: String,
-    file: Vec<u8>,
-    proof: Vec<u8>,
-}
+use crate::file::{get_file_as_byte_vec, read_dir};
 
 const GROUP_NUMBER: u64 = 40;
 const REQUIRED_SHARDS: u64 = 20;
-
-fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
-    Ok(fs::read_dir(path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_dir() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-fn get_files<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
-    Ok(fs::read_dir(path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_file() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-fn get_files_to_provide(s: &str, group_number: u64) {
-
-    let _dirs = read_dir(s);
-
-    let mut dirs = _dirs.unwrap();
-
-    let mut files = Vec::<String>::new();
-
-    println!("{:?}", dirs);
-
-    for dir in dirs {
-        files.push(format!("{}.{}", dir, group_number));
-    }
-
-    println!("{:?}", files);
-}
-
-fn get_file_as_byte_vec(filename: String) -> Vec<u8> {
-    println!("{}", filename);
-    let mut f = File::open(&filename).expect("no file found");
-    let metadata = fs::metadata(&filename).expect("unable to read metadata");
-    let mut buffer = vec![0; metadata.len() as usize];
-    f.read(&mut buffer).expect("buffer overflow");
-
-    buffer
-}
 
 fn generate_key_Nth_group(n: u64) -> Keypair {
     let mut rng = rand::thread_rng();
@@ -832,7 +758,7 @@ mod network {
     use async_trait::async_trait;
     use futures::channel::{mpsc, oneshot};
     use libp2p::core::either::EitherError;
-    use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed, ProtocolName};
+    use libp2p::core::upgrade::{ProtocolName, read_length_prefixed, write_length_prefixed};
     use libp2p::{gossipsub, identity, kad};
     use libp2p::identity::ed25519;
     use libp2p::kad::record::store::MemoryStore;
@@ -856,8 +782,8 @@ mod network {
     use libp2p::gossipsub::error::GossipsubHandlerError;
     use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
     use libp2p_request_response::RequestResponseConfig;
+    use crate::types::file_request_value::FileRequestValue;
     use crate::network::gossipsub::MessageId;
-
 
     /// Creates the network components, namely:
     ///
@@ -991,16 +917,6 @@ mod network {
                 .expect("Command receiver not to be dropped.");
             receiver.await.expect("Sender not to be dropped.")
         }
-
-        /*pub async fn add_kademlia(
-            &mut self,
-            peer_id: PeerId,
-            addr: Multiaddr
-        ) {
-            self.sender
-                .send(Command::AddKademlia { peer_id, addr })
-                .await;
-        }*/
 
         /// Dial the given peer at the given address.
         pub async fn dial(
