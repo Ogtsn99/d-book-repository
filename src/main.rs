@@ -96,6 +96,7 @@
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
 use crate::types::proof::Proof;
+use crate::types::file_upload_value::FileUploadValue;
 use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -132,14 +133,6 @@ use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod types;
-
-#[derive(Serialize)]
-#[derive(Deserialize)]
-struct FileUploadValue {
-    file_name: String,
-    file: Vec<u8>,
-    proof: Vec<u8>,
-}
 
 const GROUP_NUMBER: u64 = 40;
 const REQUIRED_SHARDS: u64 = 20;
