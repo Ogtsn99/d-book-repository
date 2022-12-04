@@ -969,16 +969,6 @@ mod network {
             receiver.await.expect("Sender not to be dropped.")
         }
 
-        /*pub async fn add_kademlia(
-            &mut self,
-            peer_id: PeerId,
-            addr: Multiaddr
-        ) {
-            self.sender
-                .send(Command::AddKademlia { peer_id, addr })
-                .await;
-        }*/
-
         /// Dial the given peer at the given address.
         pub async fn dial(
             &mut self,
