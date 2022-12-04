@@ -86,6 +86,13 @@
 // UPLOAD
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/45943 --secret-key-seed 199 upload --name {file name here!}
 
+// AWS
+// rpcを立ち上げる。hardhat node, hardhat run scripts/deploy も忘れず
+// rpc-url = http://rpcのパブリックアドレス:8545
+// bootstrap: cd d-book-repository; ./target/release/main --listen-address /ip4/0.0.0.0/tcp/40837 --secret-key-seed 1 --rpc-url ${rpc-url} provide
+//
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/0.0.0.0/tcp/40942 --secret-key-seed 99 get --name 1MB_Sample
+
 use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -304,8 +311,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .expect("Dial to succeed");
     }
 
+    let rpc_rul = match opt.rpc_url {
+        Some(url) => url,
+        None => "http://127.0.0.1:8545/".to_string()
+    };
+
+    println!("{}", rpc_rul);
+
     // create contract instance for mumbai testnet
-    let provider = Provider::<Http>::try_from("http://127.0.0.1:8545/").unwrap();
+    let provider = Provider::<Http>::try_from(rpc_rul).unwrap();
     let mut f = File::open("./contract.json").expect("no file found");
     let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
     let mut buffer = vec![0; metadata.len() as usize];
@@ -782,6 +796,9 @@ struct Opt {
 
     #[clap(long)]
     listen_address: Option<Multiaddr>,
+
+    #[clap(long)]
+    rpc_url: Option<String>,
 
     #[clap(subcommand)]
     argument: CliArgument,
