@@ -95,6 +95,7 @@
 
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
+use crate::types::proof::Proof;
 use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -131,11 +132,6 @@ use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod types;
-
-#[derive(Deserialize)]
-struct Proof {
-    proof: Vec<String>
-}
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
