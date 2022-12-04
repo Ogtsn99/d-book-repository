@@ -94,7 +94,7 @@
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/0.0.0.0/tcp/40942 --secret-key-seed 99 get --name 1MB_Sample
 
 mod types;
-mod file;
+mod libs;
 
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
@@ -134,7 +134,7 @@ use serde::ser::StdError;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use crate::file::{get_file_as_byte_vec, read_dir};
+use crate::libs::file::{get_file_as_byte_vec, read_dir};
 
 const GROUP_NUMBER: u64 = 40;
 const REQUIRED_SHARDS: u64 = 20;
