@@ -93,6 +93,7 @@
 //
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/0.0.0.0/tcp/40942 --secret-key-seed 99 get --name 1MB_Sample
 
+use crate::types::file_request_value::FileRequestValue;
 use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
@@ -128,13 +129,7 @@ use reed_solomon_erasure::galois_8::ReedSolomon;
 use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize)]
-#[derive(Deserialize)]
-struct FileRequestValue {
-    file: String,
-    address: String,
-    signature: String,
-}
+mod types;
 
 #[derive(Serialize)]
 #[derive(Deserialize)]
@@ -832,7 +827,7 @@ mod network {
     use async_trait::async_trait;
     use futures::channel::{mpsc, oneshot};
     use libp2p::core::either::EitherError;
-    use libp2p::core::upgrade::{read_length_prefixed, write_length_prefixed, ProtocolName};
+    use libp2p::core::upgrade::{ProtocolName, read_length_prefixed, write_length_prefixed};
     use libp2p::{gossipsub, identity, kad};
     use libp2p::identity::ed25519;
     use libp2p::kad::record::store::MemoryStore;
@@ -856,8 +851,8 @@ mod network {
     use libp2p::gossipsub::error::GossipsubHandlerError;
     use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
     use libp2p_request_response::RequestResponseConfig;
+    use crate::types::file_request_value::FileRequestValue;
     use crate::network::gossipsub::MessageId;
-
 
     /// Creates the network components, namely:
     ///
