@@ -93,6 +93,9 @@
 //
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/0.0.0.0/tcp/40942 --secret-key-seed 99 get --name 1MB_Sample
 
+mod types;
+mod file;
+
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
 use crate::types::proof::Proof;
@@ -131,64 +134,10 @@ use serde::ser::StdError;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-
-mod types;
+use crate::file::{get_file_as_byte_vec, read_dir};
 
 const GROUP_NUMBER: u64 = 40;
 const REQUIRED_SHARDS: u64 = 20;
-
-fn read_dir<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
-    Ok(fs::read_dir(path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_dir() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-fn get_files<P: AsRef<Path>>(path: P) -> io::Result<Vec<String>> {
-    Ok(fs::read_dir(path)?
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            if entry.file_type().ok()?.is_file() {
-                Some(entry.file_name().to_string_lossy().into_owned())
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-fn get_files_to_provide(s: &str, group_number: u64) {
-
-    let _dirs = read_dir(s);
-
-    let mut dirs = _dirs.unwrap();
-
-    let mut files = Vec::<String>::new();
-
-    println!("{:?}", dirs);
-
-    for dir in dirs {
-        files.push(format!("{}.{}", dir, group_number));
-    }
-
-    println!("{:?}", files);
-}
-
-fn get_file_as_byte_vec(filename: String) -> Vec<u8> {
-    println!("{}", filename);
-    let mut f = File::open(&filename).expect("no file found");
-    let metadata = fs::metadata(&filename).expect("unable to read metadata");
-    let mut buffer = vec![0; metadata.len() as usize];
-    f.read(&mut buffer).expect("buffer overflow");
-
-    buffer
-}
 
 fn generate_key_Nth_group(n: u64) -> Keypair {
     let mut rng = rand::thread_rng();
