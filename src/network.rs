@@ -149,7 +149,7 @@ pub async fn new(
             sender: command_sender,
         },
         event_receiver,
-        EventLoop::new(swarm, command_receiver, event_sender),
+        EventLoop::new(Box::new(swarm), command_receiver, event_sender),
         peer_id,
         group,
     ))
@@ -320,7 +320,7 @@ impl Client {
 }
 
 pub struct EventLoop {
-    swarm: Swarm<ComposedBehaviour>,
+    swarm: Box<Swarm<ComposedBehaviour>>,
     //command_sender: mpsc::Sender<Command>,
     command_receiver: mpsc::Receiver<Command>,
     event_sender: mpsc::Sender<Event>,
@@ -334,7 +334,7 @@ pub struct EventLoop {
 
 impl EventLoop {
     fn new(
-        swarm: Swarm<ComposedBehaviour>,
+        swarm: Box<Swarm<ComposedBehaviour>>,
         //command_sender: mpsc::Sender<Command>,
         command_receiver: mpsc::Receiver<Command>,
         event_sender: mpsc::Sender<Event>,
