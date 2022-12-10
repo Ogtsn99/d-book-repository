@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         is_provider = true;
     }
 
-    let (mut network_client, mut network_events, network_event_loop, peerId, group) =
+    let (mut network_client, mut network_events, network_event_loop, peer_id, group) =
         network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
     tokio::spawn(network_event_loop.run(network_client.clone(), group.clone() as u8));
@@ -161,7 +161,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let symbol = contract.method::<_, String>("symbol", ()).unwrap().call().await.unwrap();
                         println!("{:?}", symbol);
 
-                        match signature.recover(peerId.to_string()) {
+                        match signature.recover(peer_id.to_string()) {
                             Ok(address) => {
                                 // TODO: check Access Right.
 
