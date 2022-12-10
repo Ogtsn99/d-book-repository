@@ -423,7 +423,7 @@ impl EventLoop {
                 f.read(&mut buffer).expect("buffer overflow");
                 let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
                 let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
-                let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
+                let contract = Contract::new(contract_data.contract_address, contract_data.abi, provider);
 
                 println!("root mae, {}", upload.file_name);
                 let root = contract.method::<_, String>("merkleRootOf", upload.file_name.clone()).unwrap().call().await.unwrap();

@@ -63,12 +63,7 @@ use libs::generate_key_for_nth_group;
 use config::GROUP_NUMBER;
 use config::REQUIRED_SHARDS;
 use libs::check_proof::check_proof;
-
-#[derive(Deserialize)]
-struct ContractData {
-    contractAddress: Address,
-    abi: Abi,
-}
+use types::contract_data::ContractData;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -134,7 +129,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
     let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
 
-    let contract = Contract::new(contract_data.contractAddress, contract_data.abi, provider);
+    let contract = Contract::new(contract_data.contract_address, contract_data.abi, provider);
 
     match opt.argument {
         // Providing a file.
