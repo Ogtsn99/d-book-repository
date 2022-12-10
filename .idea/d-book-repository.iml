@@ -78,7 +78,9 @@
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/value-bag-29f6b46a351cc9ea/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/wasm-bindgen-c0833c49d67bd0c0/out" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/target/debug/build/wasm-bindgen-shared-574515182be641af/out" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/src/libs/check_prrof/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
+      <excludeFolder url="file://$MODULE_DIR$/src/libs/check_prrof/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

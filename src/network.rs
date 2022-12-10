@@ -36,7 +36,7 @@ use libp2p::gossipsub::{Gossipsub, GossipsubEvent, GossipsubMessage, MessageAuth
 use libp2p::gossipsub::error::GossipsubHandlerError;
 use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_request_response::RequestResponseConfig;
-use crate::{check_proof, ContractData, generate_key_for_nth_group, GROUP_NUMBER};
+use crate::{ContractData, check_proof ,generate_key_for_nth_group, GROUP_NUMBER};
 use crate::libs::generate_key_for_nth_group::generate_key_nth_group;
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_upload_value::FileUploadValue;
