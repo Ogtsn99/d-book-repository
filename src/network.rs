@@ -36,7 +36,8 @@ use libp2p::gossipsub::{Gossipsub, GossipsubEvent, GossipsubMessage, MessageAuth
 use libp2p::gossipsub::error::GossipsubHandlerError;
 use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_request_response::RequestResponseConfig;
-use crate::{check_proof, ContractData, generate_key_Nth_group, GROUP_NUMBER};
+use crate::{check_proof, ContractData, generate_key_for_nth_group, GROUP_NUMBER};
+use crate::libs::generate_key_for_nth_group::generate_key_nth_group;
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_upload_value::FileUploadValue;
 use crate::types::proof::Proof;
@@ -52,8 +53,8 @@ use crate::types::proof::Proof;
 pub async fn new(
     secret_key_seed: Option<u8>,
     group: Option<u64>,
-    is_provider: bool
-) -> Result<(Client, impl Stream<Item = Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
+    is_provider: bool,
+) -> Result<(Client, impl Stream<Item=Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
     // Create a public/private key pair, either random or based on a seed.
     let id_keys = match secret_key_seed {
         Some(seed) => {
@@ -67,13 +68,13 @@ pub async fn new(
         None => {
             match group {
                 Some(group) => {
-                    generate_key_Nth_group(group.try_into().unwrap())
+                    generate_key_nth_group(group.try_into().unwrap())
                 }
                 None => {
                     identity::Keypair::generate_ed25519()
                 }
             }
-        },
+        }
     };
 
     let peer_id = id_keys.public().to_peer_id();
@@ -90,7 +91,7 @@ pub async fn new(
     let group = sum % GROUP_NUMBER;
     println!("assigned to GROUP {}", group);
 
-    let protocol_version:String = "beta".to_string();
+    let protocol_version: String = "beta".to_string();
 
     let identify = Identify::new(IdentifyConfig::new(protocol_version, id_keys.public().clone()));
 
@@ -244,7 +245,6 @@ impl Client {
         &mut self,
         file_name: String,
     ) -> Vec<Result<Vec<u8>, Box<dyn Error + Send>>> {
-
         let mut senders = Vec::new();
         let mut receivers = Vec::new();
 
@@ -301,14 +301,14 @@ impl Client {
 
     pub async fn upload_file(&mut self, file: Vec<u8>, group: u8) {
         self.sender
-            .send(Command::UploadFile {file, group})
+            .send(Command::UploadFile { file, group })
             .await
             .expect("Command receiver not to be dropped")
     }
 
     pub async fn upload_shards(&mut self, shards: Vec<Vec<u8>>) {
         self.sender
-            .send(Command::UploadShards {shards})
+            .send(Command::UploadShards { shards })
             .await
             .expect("Command receiver not to be dropped")
         /*
@@ -401,7 +401,7 @@ impl EventLoop {
             ComposedEvent,
             EitherError<EitherError<EitherError<GossipsubHandlerError, ConnectionHandlerUpgrErr<std::io::Error>>, std::io::Error>, std::io::Error>,
         >,
-        group: u8
+        group: u8,
     ) {
         match event {
             SwarmEvent::Behaviour(ComposedEvent::GossipSub(GossipsubEvent::Message {
@@ -456,7 +456,7 @@ impl EventLoop {
                     id,
                     peer_id
                 )*/
-            },
+            }
 
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
                                       KademliaEvent::OutboundQueryCompleted {
@@ -486,7 +486,6 @@ impl EventLoop {
             }
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(_)) => {}
             SwarmEvent::Behaviour(ComposedEvent::Identify(e)) => {
-
                 if let IdentifyEvent::Received {
                     peer_id,
                     info:
@@ -585,7 +584,7 @@ impl EventLoop {
             e => {
                 println!("{:?}", e);
                 //panic!("{:?}", e)
-            },
+            }
         }
     }
 
@@ -693,7 +692,7 @@ impl EventLoop {
                     let group = sum % GROUP_NUMBER;
                     if !requested[group as usize] {
                         let signature = wallet.sign_message(peer.to_string()).await.unwrap();
-                        let request_value = FileRequestValue{
+                        let request_value = FileRequestValue {
                             file: file_name.clone(),
                             address: wallet.address().to_string(),
                             signature: signature.to_string(),
@@ -750,7 +749,7 @@ impl EventLoop {
                     let group_ = sum % GROUP_NUMBER;
                     if group_ as u8 == group {
                         let signature = wallet.sign_message(peer.to_string()).await.unwrap();
-                        let request_value = FileRequestValue{
+                        let request_value = FileRequestValue {
                             file: file_name.clone(),
                             address: wallet.address().to_string(),
                             signature: signature.to_string(),
@@ -778,7 +777,7 @@ impl EventLoop {
                 let wallet = LocalWallet::from_str(&private_key).unwrap();
                 let signature = wallet.sign_message(peer.to_string()).await.unwrap();
 
-                let request_value = FileRequestValue{
+                let request_value = FileRequestValue {
                     file: file_name,
                     address: wallet.address().to_string(),
                     signature: signature.to_string(),
@@ -815,8 +814,8 @@ impl EventLoop {
                     .gossipsub
                     .publish(topic.clone(), file)
                     .expect("publish file failed.");
-            },
-            Command::UploadShards {shards} => {
+            }
+            Command::UploadShards { shards } => {
                 for (i, shard) in shards.into_iter().enumerate() {
                     let topic = IdentTopic::new(format!("testnet-{}", i));
 
@@ -905,7 +904,7 @@ enum Command {
     GetShard {
         file_name: String,
         group: u8,
-        sender: oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>
+        sender: oneshot::Sender<Result<Vec<u8>, Box<dyn Error + Send>>>,
     },
     RequestFile {
         file_name: String,
@@ -922,7 +921,7 @@ enum Command {
     },
     UploadShards {
         shards: Vec<Vec<u8>>,
-    }
+    },
 }
 
 #[derive(Debug)]
@@ -936,10 +935,13 @@ pub enum Event {
 // Simple file exchange protocol
 #[derive(Debug, Clone)]
 struct FileExchangeProtocol();
+
 #[derive(Clone)]
 struct FileExchangeCodec();
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FileRequest(String);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileResponse(Vec<u8>);
 

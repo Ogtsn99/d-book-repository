@@ -1,81 +1,3 @@
-// Copyright 2021 Protocol Labs.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a
-// copy of this software and associated documentation files (the "Software"),
-// to deal in the Software without restriction, including without limitation
-// the rights to use, copy, modify, merge, publish, distribute, sublicense,
-// and/or sell copies of the Software, and to permit persons to whom the
-// Software is furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-// OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-// FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-// DEALINGS IN THE SOFTWARE.
-
-//! # File sharing example
-//!
-//! Basic file sharing application with peers either providing or locating and
-//! getting files by name.
-//!
-//! While obviously showcasing how to build a basic file sharing application,
-//! the actual goal of this example is **to show how to integrate rust-libp2p
-//! into a larger application**.
-//!
-//! ## Sample plot
-//!
-//! Assuming there are 3 nodes, A, B and C. A and B each provide a file while C
-//! retrieves a file.
-//!
-//! Provider nodes A and B each provide a file, file FA and FB respectively.
-//! They do so by advertising themselves as a provider for their file on a DHT
-//! via [`libp2p-kad`]. The two, among other nodes of the network, are
-//! interconnected via the DHT.
-//!
-//! Node C can locate the providers for file FA or FB on the DHT via
-//! [`libp2p-kad`] without being connected to the specific node providing the
-//! file, but any node of the DHT. Node C then connects to the corresponding
-//! node and requests the file content of the file via
-//! [`libp2p-request-response`].
-//!
-//! ## Architectural properties
-//!
-//! - Clean clonable async/await interface ([`Client`]) to interact with the
-//!   network layer.
-//!
-//! - Single task driving the network layer, no locks required.
-//!
-//! ## Usage
-//!
-//! A two node setup with one node providing the file and one node requesting the file.
-//!
-//! 1. Run command below in one terminal.
-//!
-//!    ```
-//!    cargo run --example file-sharing -- \
-//!              --listen-address /ip4/127.0.0.1/tcp/40837 \
-//!              --secret-key-seed 1 \
-//!              provide \
-//!              --path <path-to-your-file> \
-//!              --name <name-for-others-to-find-your-file>
-//!    ```
-//!
-//! 2. Run command below in another terminal.
-//!
-//!    ```
-//!    cargo run --example file-sharing -- \
-//!              --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X \
-//!              get \
-//!              --name <name-for-others-to-find-your-file>
-//!    ```
-//!
-//! Note: The client does not need to be directly connected to the providing
-//! peer, as long as both are connected to some node on the same DHT.
 // PROVIDE
 // cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
@@ -96,6 +18,7 @@
 mod types;
 mod libs;
 mod network;
+mod config;
 
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
@@ -127,7 +50,6 @@ use std::io::Read;
 use std::iter::Map;
 use futures::future::{BoxFuture, SelectOk};
 use libp2p::identity::Keypair;
-use rand::Rng;
 use serde::Serialize;
 use serde::Deserialize;
 use crate::identity::ed25519;
@@ -137,39 +59,9 @@ use ethers_signers::{LocalWallet, Signer};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use network::Event;
 use crate::libs::file::{get_file_as_byte_vec, read_dir};
-
-const GROUP_NUMBER: u64 = 40;
-const REQUIRED_SHARDS: u64 = 20;
-
-fn generate_key_Nth_group(n: u64) -> Keypair {
-    let mut rng = rand::thread_rng();
-    let mut bytes = [0u8; 32];
-
-    loop {
-        for i in 0..32 {
-            bytes[i] = rng.gen();
-        }
-
-        let secret_key = ed25519::SecretKey::from_bytes(&mut bytes).expect(
-            "this returns `Err` only if the length is wrong; the length is correct; qed",
-        );
-
-        let local_key = identity::Keypair::Ed25519(secret_key.into());
-
-        let local_peer_id = local_key.clone().public().to_peer_id();
-        let bytes = local_peer_id.to_bytes();
-
-        let mut sum = 0u64;
-        for num in bytes {
-            sum += num as u64;
-        }
-        if sum % GROUP_NUMBER == n {
-            return local_key;
-        } else {
-            continue ;
-        }
-    }
-}
+use libs::generate_key_for_nth_group;
+use config::GROUP_NUMBER;
+use config::REQUIRED_SHARDS;
 
 fn calc_hash_from_two(s1: &String, s2: &String) -> String {
     if s1 < s2 {
@@ -205,7 +97,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         is_provider = true;
     }
 
-    let (mut network_client, mut network_events, network_event_loop,peerId, group) =
+    let (mut network_client, mut network_events, network_event_loop, peerId, group) =
         network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
     tokio::spawn(network_event_loop.run(network_client.clone(), group.clone() as u8));
@@ -218,13 +110,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 .start_listening(addr)
                 .await
                 .expect("Listening not to fail.");
-        },
+        }
         None => {
             network_client
                 .start_listening("/ip4/0.0.0.0/tcp/0".parse()?)
                 .await
                 .expect("Listening not to fail.");
-        },
+        }
     };
 
     // In case the user provided an address of a peer on the CLI, dial it.
@@ -261,7 +153,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
     match opt.argument {
         // Providing a file.
         CliArgument::Provide { .. } => {
-
             let contents_to_provide = read_dir("./bookshards")?;
 
             for content in &contents_to_provide {
@@ -302,18 +193,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                                         let mut file_proof = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.proofs.{}", &file, &file, group));
 
-                                        let response: FileResponseValue = FileResponseValue{ file: file_content, proof: file_proof, group: group as u8};
+                                        let response: FileResponseValue = FileResponseValue { file: file_content, proof: file_proof, group: group as u8 };
 
                                         let response_json_result = serde_json::to_string(&response).unwrap();
                                         let response_bytes = response_json_result.into_bytes();
 
                                         network_client.respond_file(response_bytes, channel).await;
-                                    },
+                                    }
                                     _ => {
                                         println!("No Ownership");
                                     }
                                 }
-
                             }
                             _ => {
                                 println!("No");
@@ -389,8 +279,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
                             println!("Invalid hashes or proofs");
                         }
-                    },
-                    None => { }
+                    }
+                    None => {}
                 }
             }
 
@@ -507,8 +397,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
                             println!("Invalid hashes or proofs");
                         }
-                    },
-                    None => { }
+                    }
+                    None => {}
                 }
             }
 
@@ -621,8 +511,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         if !check_proof(sha256::digest_bytes(x), &proofs.get(&(group as u8)).unwrap().proof, &root) {
                             println!("Invalid hashes or proofs");
                         }
-                    },
-                    None => { }
+                    }
+                    None => {}
                 }
             }
 
@@ -679,10 +569,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let buffer = get_file_as_byte_vec(format!("./uploads/{}.shards/{}.shards.{}", name, name, num));
                 let proof = get_file_as_byte_vec(format!("./uploads/{}.shards/{}.proofs.{}", name, name, num));
 
-                let file_upload_value: FileUploadValue = FileUploadValue{
+                let file_upload_value: FileUploadValue = FileUploadValue {
                     file_name: name.clone(),
                     file: buffer,
-                    proof
+                    proof,
                 };
                 let data = String::into_bytes(serde_json::to_string(&file_upload_value).unwrap());
                 //tokio::spawn(async move { network_client.upload_file(buffer, num as u8).await });
@@ -701,8 +591,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             let uploading_time = start_uploading.elapsed().as_millis();
 
             println!("find peer {}", find_peer_time);
-            loop {
-            }
+            loop {}
         }
     }
 
@@ -734,8 +623,7 @@ struct Opt {
 
 #[derive(Debug, Parser)]
 enum CliArgument {
-    Provide {
-    },
+    Provide {},
     Get {
         #[clap(long)]
         name: String,
