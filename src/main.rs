@@ -19,6 +19,7 @@ mod types;
 mod libs;
 mod network;
 mod config;
+mod command_options;
 
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
@@ -28,7 +29,6 @@ use std::collections::HashMap;
 use async_std::io;
 use rand::seq::SliceRandom;
 use async_std::task::spawn;
-use clap::Parser;
 use dotenv::dotenv;
 use ethers::contract::Contract;
 use ethers_core::abi::Abi;
@@ -64,6 +64,8 @@ use config::GROUP_NUMBER;
 use config::REQUIRED_SHARDS;
 use libs::check_proof::check_proof;
 use types::contract_data::ContractData;
+use command_options::{Opt, CliArgument};
+use clap::Parser;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -345,40 +347,4 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
-}
-
-#[derive(Parser, Debug)]
-#[clap(name = "libp2p file sharing example")]
-struct Opt {
-    /// Fixed value to generate deterministic peer ID.
-    #[clap(long)]
-    secret_key_seed: Option<u8>,
-
-    #[clap(long)]
-    group: Option<u64>,
-
-    #[clap(long)]
-    peer: Option<Multiaddr>,
-
-    #[clap(long)]
-    listen_address: Option<Multiaddr>,
-
-    #[clap(long)]
-    rpc_url: Option<String>,
-
-    #[clap(subcommand)]
-    argument: CliArgument,
-}
-
-#[derive(Debug, Parser)]
-enum CliArgument {
-    Provide {},
-    Get {
-        #[clap(long)]
-        name: String,
-    },
-    Upload {
-        #[clap(long)]
-        name: String,
-    },
 }
