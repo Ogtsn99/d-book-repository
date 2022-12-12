@@ -68,6 +68,7 @@ use types::contract_data::ContractData;
 use command_options::{Opt, CliArgument};
 use clap::Parser;
 use crate::actions::get::get;
+use crate::actions::provide::provide;
 use crate::actions::upload::upload;
 
 #[tokio::main]
@@ -86,7 +87,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (mut network_client, mut network_events, network_event_loop, peer_id, group) =
         network::new(opt.secret_key_seed, opt.group, is_provider).await?;
 
-    tokio::spawn(network_event_loop.run(network_client.clone(), group.clone() as u8));
+    let rpc_rul = match opt.rpc_url {
+        Some(url) => url,
+        None => "http://127.0.0.1:8545/".to_string()
+    };
+
+    println!("{}", rpc_rul);
+
+    let mut f = File::open("./contract.json").expect("no file found");
+    let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
+    let mut buffer = vec![0; metadata.len() as usize];
+    f.read(&mut buffer).expect("buffer overflow");
+    // create contract instance for ethereum network
+    let provider = Provider::<Http>::try_from(rpc_rul).unwrap();
+    let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
+    let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
+    let contract = Contract::new(contract_data.contract_address, contract_data.abi, provider);
+
+    tokio::spawn(network_event_loop.run(network_client.clone(), group.clone() as u8, contract.clone()));
 
     // In case a listen address was provided use it, otherwise listen on any
     // address.
@@ -117,94 +135,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .expect("Dial to succeed");
     }
 
-    let rpc_rul = match opt.rpc_url {
-        Some(url) => url,
-        None => "http://127.0.0.1:8545/".to_string()
-    };
-
-    println!("{}", rpc_rul);
-
-    // create contract instance for mumbai testnet
-    let provider = Provider::<Http>::try_from(rpc_rul).unwrap();
-    let mut f = File::open("./contract.json").expect("no file found");
-    let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
-    let mut buffer = vec![0; metadata.len() as usize];
-    f.read(&mut buffer).expect("buffer overflow");
-
-    let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
-    let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
-
-    let contract = Contract::new(contract_data.contract_address, contract_data.abi, provider);
-
     match opt.argument {
-        // Providing a file.
         CliArgument::Provide { .. } => {
-            let contents_to_provide = read_dir("./bookshards")?;
-
-            for content in &contents_to_provide {
-                println!("{}", format!("{}.{}", content.clone(), group));
-                network_client.start_providing(format!("{}.{}", content.clone(), group)).await;
-            }
-
-            loop {
-                match network_events.next().await {
-                    // Reply with the content of the file on incoming requests.
-                    Some(network::Event::InboundRequest { request, channel }) => {
-                        println!("request: {}", request);
-
-                        let file_request_value: FileRequestValue = serde_json::from_str(&*request).unwrap();
-                        let file = file_request_value.file;
-                        let address = file_request_value.address;
-                        let signature = Signature::from_str(&*file_request_value.signature).unwrap();
-
-                        //println!("{:?}", title);
-
-                        println!("file: {}", file);
-                        println!("address: {}", address);
-                        println!("signature: {}", signature);
-
-                        let symbol = contract.method::<_, String>("symbol", ()).unwrap().call().await.unwrap();
-                        println!("{:?}", symbol);
-
-                        match signature.recover(peer_id.to_string()) {
-                            Ok(address) => {
-                                // TODO: check Access Right.
-
-                                println!("{}", file);
-                                let has_access_right = contract.method::<_, bool>("hasAccessRight", (address, file.clone())).unwrap().call().await.unwrap();
-
-                                match has_access_right {
-                                    true => {
-                                        let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
-
-                                        let mut file_proof = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.proofs.{}", &file, &file, group));
-
-                                        let response: FileResponseValue = FileResponseValue { file: file_content, proof: file_proof, group: group as u8 };
-
-                                        let response_json_result = serde_json::to_string(&response).unwrap();
-                                        let response_bytes = response_json_result.into_bytes();
-
-                                        network_client.respond_file(response_bytes, channel).await;
-                                    }
-                                    _ => {
-                                        println!("No Ownership");
-                                    }
-                                }
-                            }
-                            _ => {
-                                println!("No");
-                            }
-                        };
-                    }
-                    e => todo!("{:?}", e),
-                }
-            }
+            provide(network_client, network_events, peer_id, contract, group).await;
         }
-
         CliArgument::Get { name } => {
             get(network_client, name, contract).await;
         }
-
         CliArgument::Upload { name } => {
             upload(network_client, name).await;
         }

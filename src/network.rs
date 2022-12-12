@@ -27,7 +27,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use async_std::io;
 use async_std::prelude::Stream;
 use ethers::contract::Contract;
-use ethers::prelude::{Http, Provider};
+use ethers::prelude::{Http, Middleware, Provider};
 use ethers_signers::{LocalWallet, Signer};
 use futures::{AsyncRead, AsyncWrite, SinkExt};
 use libp2p::gossipsub::{IdentTopic, MessageId, Topic};
@@ -352,7 +352,7 @@ impl EventLoop {
         }
     }
 
-    pub async fn run(mut self/*, mut client: Client*/, client: Client, group: u8) {
+    pub async fn run<T: Middleware>(mut self/*, mut client: Client*/, client: Client, group: u8, contract: Contract<T>) {
         let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
         let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
@@ -385,7 +385,7 @@ impl EventLoop {
                     }
                 }
 
-                event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite."), group).await,
+                event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite."), group, contract.clone()).await,
                 command = self.command_receiver.next() => match command {
                     Some(c) => self.handle_command(c).await,
                     // Command channel closed, thus shutting down the network event loop.
@@ -397,13 +397,14 @@ impl EventLoop {
 
     // TODO: uploadされたストレージはstorage/books/book_name に入れる, proofはproofs/book_name にする
     // TODO: この部分が実行されたあとnetworkのコネクションが切れる？よくわからないので調査する
-    async fn handle_event(
+    async fn handle_event<T: Middleware>(
         &mut self,
         event: SwarmEvent<
             ComposedEvent,
             EitherError<EitherError<EitherError<GossipsubHandlerError, ConnectionHandlerUpgrErr<std::io::Error>>, std::io::Error>, std::io::Error>,
         >,
         group: u8,
+        contract: Contract<T>
     ) {
         match event {
             SwarmEvent::Behaviour(ComposedEvent::GossipSub(GossipsubEvent::Message {
@@ -417,15 +418,6 @@ impl EventLoop {
                 let received_message_at = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards");
-
-                let provider = Provider::<Http>::try_from("http://127.0.0.1:8545/").unwrap();
-                let mut f = File::open("./contract.json").expect("no file found");
-                let metadata = fs::metadata("./contract.json").expect("unable to read metadata");
-                let mut buffer = vec![0; metadata.len() as usize];
-                f.read(&mut buffer).expect("buffer overflow");
-                let contract_data_str: &str = std::str::from_utf8(&buffer).unwrap();
-                let contract_data: ContractData = serde_json::from_str(contract_data_str).unwrap();
-                let contract = Contract::new(contract_data.contract_address, contract_data.abi, provider);
 
                 println!("root mae, {}", upload.file_name);
                 let root = contract.method::<_, String>("merkleRootOf", upload.file_name.clone()).unwrap().call().await.unwrap();
