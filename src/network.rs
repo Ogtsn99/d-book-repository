@@ -385,7 +385,7 @@ impl EventLoop {
                     }
                 }
 
-                event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite."), group).await  ,
+                event = self.swarm.next() => self.handle_event(event.expect("Swarm stream to be infinite."), group).await,
                 command = self.command_receiver.next() => match command {
                     Some(c) => self.handle_command(c).await,
                     // Command channel closed, thus shutting down the network event loop.
@@ -395,6 +395,8 @@ impl EventLoop {
         }
     }
 
+    // TODO: uploadされたストレージはstorage/books/book_name に入れる, proofはproofs/book_name にする
+    // TODO: この部分が実行されたあとnetworkのコネクションが切れる？よくわからないので調査する
     async fn handle_event(
         &mut self,
         event: SwarmEvent<
