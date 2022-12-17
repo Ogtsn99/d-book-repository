@@ -36,4 +36,4 @@ path = "src/main.rs"
 
 [[bin]]
 name = "erasureCoding"
-path = "src/erasureCoding.rs"
+path = "src/libs/erasure_coding.rs"
