@@ -1,20 +1,44 @@
+use std::collections::HashSet;
 use std::str::FromStr;
 use async_std::stream::Stream;
 use ethers::contract::Contract;
 use ethers::prelude::Middleware;
 use ethers_core::types::Signature;
 use libp2p::PeerId;
-use crate::libs::file::{get_file_as_byte_vec, read_dir};
+use regex::Regex;
+use crate::libs::file::{get_file_as_byte_vec, get_files, read_dir};
 use crate::network;
 use crate::network::{Client, Event};
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_response_value::FileResponseValue;
+
 use futures::StreamExt;
 
 pub async fn provide<T: Middleware>(mut network_client: Client, mut network_events: impl Stream<Item=Event> + std::marker::Unpin, peer_id: PeerId, contract: Contract<T>, group: u64) {
-    let contents_to_provide = read_dir("./bookshards").unwrap();
+    let files_in_storage = get_files("./storage").unwrap();
 
-    for content in &contents_to_provide {
+    let re = Regex::new(r"^(.+).shards\.[0-9]+$").unwrap();
+
+    let mut tmp_hash_set: HashSet<String> = HashSet::new();
+
+    let contents = files_in_storage.iter().filter_map(|x| {
+        let cap = re.captures(&x);
+        return match cap {
+            Some(ma) => {
+                let str = ma.get(1).unwrap().as_str();
+
+                if tmp_hash_set.contains(str) {
+                    None
+                } else {
+                    tmp_hash_set.insert(str.to_string());
+                    Some(ma.get(1).unwrap().as_str())
+                }
+            }
+            _ => None,
+        };
+    }).collect::<Vec<&str>>();
+
+    for content in contents {
         println!("{}", format!("{}.{}", content.clone(), group));
         network_client.start_providing(format!("{}.{}", content.clone(), group)).await;
     }
@@ -48,9 +72,9 @@ pub async fn provide<T: Middleware>(mut network_client: Client, mut network_even
 
                         match has_access_right {
                             true => {
-                                let mut file_content = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.shards.{}", &file, &file, group));
+                                let mut file_content = get_file_as_byte_vec(format!("./storage/{}.shards.{}", &file, group));
 
-                                let mut file_proof = get_file_as_byte_vec(format!("./bookshards/{}.shards/{}.proofs.{}", &file, &file, group));
+                                let mut file_proof = get_file_as_byte_vec(format!("./storage/{}.proofs.{}", &file, group));
 
                                 let response: FileResponseValue = FileResponseValue { file: file_content, proof: file_proof, group: group as u8 };
 

@@ -429,14 +429,17 @@ impl EventLoop {
                 if ok {
                     println!("OK");
                 } else {
-                    println!("No");
+                    println!("スマートコントラクトに登録されていないコンテンツです");
+                    return ;
                 }
 
                 let check_hash_at = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards");
 
-                std::fs::write(format!("storage/{}.{}", upload.file_name, group), upload.file).unwrap();
+                std::fs::write(format!("storage/{}.shards.{}", upload.file_name, group), upload.file).unwrap();
+                let proofs_json = serde_json::to_string(&proof).unwrap();
+                std::fs::write(format!("storage/{}.proofs.{}", upload.file_name, group), proofs_json).unwrap();
 
                 let save_file_at = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -444,12 +447,7 @@ impl EventLoop {
 
                 std::fs::write("time", format!("received:{:?}, check hash:{:?}, save file:{:?}",
                                                received_message_at, check_hash_at, save_file_at)).unwrap();
-                /*println!(
-                    "Got message: {} with id: {} from peer: {:?}",
-                    String::from_utf8_lossy(&message.data),
-                    id,
-                    peer_id
-                )*/
+                // TODO: グループ内の他のノードにも配る
             }
 
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
