@@ -419,7 +419,7 @@ impl EventLoop {
                     .duration_since(UNIX_EPOCH)
                     .expect("Time went backwards");
 
-                println!("root mae, {}", upload.file_name);
+                println!("{}のルートをスマコンから取得", upload.file_name);
                 let root = contract.method::<_, String>("merkleRootOf", upload.file_name.clone()).unwrap().call().await.unwrap();
 
                 println!("root, {}", root);
