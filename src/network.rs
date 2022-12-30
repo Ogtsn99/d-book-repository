@@ -118,10 +118,8 @@ pub async fn new(
         gossipsub::Gossipsub::new(MessageAuthenticity::Signed(id_keys.clone()), gossipsub_config)
             .expect("Correct configuration");
 
-    gossipsub.subscribe(&IdentTopic::new("testnet")).unwrap();
-
     if is_provider {
-        gossipsub.subscribe(&IdentTopic::new(format!("testnet-{}", group))).unwrap();
+        gossipsub.subscribe(&IdentTopic::new(group.to_string())).unwrap();
     }
 
     // Build the Swarm, connecting the lower layer transport logic with the
@@ -448,6 +446,19 @@ impl EventLoop {
                 std::fs::write("time", format!("received:{:?}, check hash:{:?}, save file:{:?}",
                                                received_message_at, check_hash_at, save_file_at)).unwrap();
                 // TODO: グループ内の他のノードにも配る
+            }
+
+            SwarmEvent::Behaviour(ComposedEvent::GossipSub(GossipsubEvent::Subscribed {
+                                                               peer_id,
+                                                               topic
+                                                           })) => {
+                println!("{}が{}をサブスクしました", peer_id.to_string(), topic.to_string());
+                // 登録されていないトピックを購読しようとしている場合、disconnectを行う
+                let group = contract.method::<_, u64>("get_group", (peer_id.to_string())).unwrap().call().await.unwrap();
+                println!("{}", group);
+                // if group.to_string() != topic.to_string() {
+                //     let _ = self.swarm.disconnect_peer_id(peer_id);
+                // }
             }
 
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
@@ -809,7 +820,7 @@ impl EventLoop {
             }
             Command::UploadShards { shards } => {
                 for (i, shard) in shards.into_iter().enumerate() {
-                    let topic = IdentTopic::new(format!("testnet-{}", i));
+                    let topic = IdentTopic::new(i.to_string());
 
                     self.swarm
                         .behaviour_mut()
