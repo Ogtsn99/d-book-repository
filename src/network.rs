@@ -38,6 +38,7 @@ use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_request_response::RequestResponseConfig;
 use crate::{ContractData, check_proof ,generate_key_for_nth_group, GROUP_NUMBER};
 use crate::libs::generate_key_for_nth_group::generate_key_nth_group;
+use crate::generate_key_for_nth_group::get_key_nth_group;
 use crate::types::file_request_value::FileRequestValue;
 use crate::types::file_upload_value::FileUploadValue;
 use crate::types::proof::Proof;
@@ -68,7 +69,7 @@ pub async fn new(
         None => {
             match group {
                 Some(group) => {
-                    generate_key_nth_group(group.try_into().unwrap())
+                    get_key_nth_group(group.try_into().unwrap())
                 }
                 None => {
                     identity::Keypair::generate_ed25519()
@@ -118,10 +119,8 @@ pub async fn new(
         gossipsub::Gossipsub::new(MessageAuthenticity::Signed(id_keys.clone()), gossipsub_config)
             .expect("Correct configuration");
 
-    gossipsub.subscribe(&IdentTopic::new("testnet")).unwrap();
-
     if is_provider {
-        gossipsub.subscribe(&IdentTopic::new(format!("testnet-{}", group))).unwrap();
+        gossipsub.subscribe(&IdentTopic::new(group.to_string())).unwrap();
     }
 
     // Build the Swarm, connecting the lower layer transport logic with the
@@ -448,6 +447,20 @@ impl EventLoop {
                 std::fs::write("time", format!("received:{:?}, check hash:{:?}, save file:{:?}",
                                                received_message_at, check_hash_at, save_file_at)).unwrap();
                 // TODO: グループ内の他のノードにも配る
+            }
+
+            SwarmEvent::Behaviour(ComposedEvent::GossipSub(GossipsubEvent::Subscribed {
+                                                               peer_id,
+                                                               topic
+                                                           })) => {
+                println!("{}が{}をサブスクしました", peer_id.to_string(), topic.to_string());
+                // 登録されていないトピックを購読しようとしている場合、disconnectを行う
+                // 1-indexedなので注意する。登録されていない場合は0が帰る
+                let group = contract.method::<_, u64>("get_group", (peer_id.to_string())).unwrap().call().await.unwrap();
+
+                if group == 0 || (group-1).to_string() != topic.to_string() {
+                    let _ = self.swarm.disconnect_peer_id(peer_id);
+                }
             }
 
             SwarmEvent::Behaviour(ComposedEvent::Kademlia(
@@ -809,7 +822,7 @@ impl EventLoop {
             }
             Command::UploadShards { shards } => {
                 for (i, shard) in shards.into_iter().enumerate() {
-                    let topic = IdentTopic::new(format!("testnet-{}", i));
+                    let topic = IdentTopic::new(i.to_string());
 
                     self.swarm
                         .behaviour_mut()

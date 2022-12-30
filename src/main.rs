@@ -1,12 +1,12 @@
 // PROVIDE
-// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 1 provide
-// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
+// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 0 provide
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWCxnyz1JxC9y1RniRQVFe2cLaLHsYNc2SnXbM7yq5JBbJ --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
 
 // GET
-// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/40942 --secret-key-seed 99 get --name {file name here!}
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWCxnyz1JxC9y1RniRQVFe2cLaLHsYNc2SnXbM7yq5JBbJ --listen-address /ip4/127.0.0.1/tcp/40942 --secret-key-seed 250 get --name 1MB_Sample
 
 // UPLOAD
-// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWPjceQrSwdWXPyLLeABRXmuqt69Rg3sBYbU1Nft9HyQ6X --listen-address /ip4/127.0.0.1/tcp/45943 --secret-key-seed 199 upload --name {file name here!}
+// cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWCxnyz1JxC9y1RniRQVFe2cLaLHsYNc2SnXbM7yq5JBbJ --listen-address /ip4/127.0.0.1/tcp/45943 --secret-key-seed 199 upload --name {file name here!}
 
 // AWS
 // rpcを立ち上げる。hardhat node, hardhat run scripts/deploy も忘れず
