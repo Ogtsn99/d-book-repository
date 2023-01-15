@@ -1,5 +1,5 @@
 // PROVIDE
-// cargo run -- --listen-address /ip4/127.0.0.1/tcp/40837 --secret-key-seed 0 provide
+// cargo run -- release --listen-address /ip4/127.0.0.1/tcp/40837 --group 0 provide
 // cargo run -- --peer /ip4/127.0.0.1/tcp/40837/p2p/12D3KooWCxnyz1JxC9y1RniRQVFe2cLaLHsYNc2SnXbM7yq5JBbJ --listen-address /ip4/127.0.0.1/tcp/40840 --secret-key-seed 2 provide
 
 // GET
