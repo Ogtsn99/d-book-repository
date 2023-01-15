@@ -36,6 +36,8 @@ use libp2p::gossipsub::{Gossipsub, GossipsubEvent, GossipsubMessage, MessageAuth
 use libp2p::gossipsub::error::GossipsubHandlerError;
 use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_request_response::RequestResponseConfig;
+use rand::thread_rng;
+use rand::seq::SliceRandom;
 use crate::{ContractData, check_proof ,generate_key_for_nth_group, GROUP_NUMBER};
 use crate::libs::generate_key_for_nth_group::generate_key_nth_group;
 use crate::generate_key_for_nth_group::get_key_nth_group;
@@ -111,7 +113,7 @@ pub async fn new(
         .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
         .message_id_fn(message_id_fn) // content-address messages. No two messages of the
         // same content will be propagated.
-        .max_transmit_size(6_000_000_000_000)
+        .max_transmit_size(6_000_000_000_000_000)
         .build()
         .expect("Valid config");
     // build a gossipsub network behaviour
@@ -453,7 +455,7 @@ impl EventLoop {
                                                                peer_id,
                                                                topic
                                                            })) => {
-                println!("{}が{}をサブスクしました", peer_id.to_string(), topic.to_string());
+                //println!("{}が{}をサブスクしました", peer_id.to_string(), topic.to_string());
                 // 登録されていないトピックを購読しようとしている場合、disconnectを行う
                 // 1-indexedなので注意する。登録されていない場合は0が帰る
                 let group = contract.method::<_, u64>("get_group", (peer_id.to_string())).unwrap().call().await.unwrap();
@@ -675,6 +677,8 @@ impl EventLoop {
                 for peer in peers_iter {
                     peers.push(peer.clone());
                 }
+
+                peers.shuffle(&mut thread_rng());
 
                 let mut senders_iter = senders.into_iter();
 

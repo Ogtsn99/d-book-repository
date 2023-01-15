@@ -21,7 +21,7 @@ async function main() {
     for (let i = 0; i < 40; i++) {
 
         if(i === 0) continue;
-        let command = `cargo run -- --peer ${nodeEndpoints[0]} --listen-address /ip4/127.0.0.1/tcp/${port} --group ${i} provide`;
+        let command = `cargo run --release -- --peer ${nodeEndpoints[0]} --listen-address /ip4/127.0.0.1/tcp/${port} --group ${i} provide`;
 
         console.log(command);
         exec(command, (err, stdout, stderr) => {
