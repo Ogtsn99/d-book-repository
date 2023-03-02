@@ -110,13 +110,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // address.
     match opt.listen_address {
         Some(addr) => {
-            network_client
+            network_client.lock().await
                 .start_listening(addr)
                 .await
                 .expect("Listening not to fail.");
         }
         None => {
-            network_client
+            network_client.lock().await
                 .start_listening("/ip4/0.0.0.0/tcp/0".parse()?)
                 .await
                 .expect("Listening not to fail.");
@@ -125,11 +125,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     // In case the user provided an address of a peer on the CLI, dial it.
     if let Some(addr) = opt.peer {
-        let peer_id = match addr.iter().last() {
+        let peer_id: PeerId = match addr.iter().last() {
             Some(Protocol::P2p(hash)) => PeerId::from_multihash(hash).expect("Valid hash."),
             _ => return Err("Expect peer multiaddr to contain peer ID.".into()),
         };
-        network_client
+        network_client.lock().await
             .dial(peer_id, addr)
             .await
             .expect("Dial to succeed");
