@@ -1,4 +1,5 @@
 use std::process;
+use std::sync::Arc;
 use crate::config::{GROUP_NUMBER, REQUIRED_SHARDS};
 use crate::libs::file::get_file_as_byte_vec;
 use crate::network::Client;
@@ -6,13 +7,14 @@ use crate::types::file_upload_value::FileUploadValue;
 use crate::{config, libs};
 
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
 use libs::erasure_coding;
 
-pub async fn upload(mut network_client: Client, name: String,) {
+pub async fn upload(mut network_client: Arc<Mutex<Client>>, name: String,) {
     let start_find_peer = Instant::now();
 
     for group in 0..40 {
-        let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
+        let providers = network_client.lock().await.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
         if providers.len() == 0 {
             println!("{} is not found", group);
         } else {
@@ -50,7 +52,7 @@ pub async fn upload(mut network_client: Client, name: String,) {
     println!("since_the_epoch");
     println!("start uploading at {:?}", since_the_epoch);
 
-    network_client.upload_shards(upload_items).await;
+    network_client.lock().await.upload_shards(upload_items).await;
     let uploading_time = start_uploading.elapsed().as_millis();
 
     println!("find peer {}", find_peer_time);

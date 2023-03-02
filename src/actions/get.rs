@@ -1,17 +1,19 @@
 use ethers::prelude::Middleware;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 use ethers::contract::Contract;
 use futures::FutureExt;
 use rand::prelude::SliceRandom;
 use reed_solomon_erasure::galois_8::ReedSolomon;
+use tokio::sync::Mutex;
 use crate::config::{GROUP_NUMBER, REQUIRED_SHARDS};
 use crate::libs::check_proof::check_proof;
 use crate::network::Client;
 use crate::types::file_response_value::FileResponseValue;
 use crate::types::proof::Proof;
 
-pub async fn get<T: Middleware>(mut network_client: Client, name: String, contract: Contract<T>) {
+pub async fn get<T: Middleware>(mut network_client: Arc<Mutex<Client>>, name: String, contract: Contract<T>) {
     let start = Instant::now();
     let mut cand = (0..40).collect::<Vec<u8>>();
 
@@ -25,7 +27,7 @@ pub async fn get<T: Middleware>(mut network_client: Client, name: String, contra
         if i == 20 {
             break;
         }
-        let providers = network_client.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
+        let providers = network_client.clone().lock().await.get_providers(format!("{}.shards.{}", name.clone(), group)).await;
         if providers.len() == 0 {
             println!("{} is not found", group);
         }
@@ -39,7 +41,7 @@ pub async fn get<T: Middleware>(mut network_client: Client, name: String, contra
     let start_downloading = Instant::now();
     let file_name = name.clone();
 
-    let requests_ = async move { network_client.get_shards(file_name).await }.boxed();
+    let requests_ = async move { network_client.lock().await.get_shards(file_name).await }.boxed();
 
     let results = requests_.await;
 

@@ -23,6 +23,7 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, Read};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use async_std::io;
 use async_std::prelude::Stream;
@@ -38,6 +39,7 @@ use libp2p::identify::{Identify, IdentifyConfig, IdentifyEvent, IdentifyInfo};
 use libp2p_request_response::RequestResponseConfig;
 use rand::thread_rng;
 use rand::seq::SliceRandom;
+use tokio::sync::Mutex;
 use crate::{ContractData, check_proof ,generate_key_for_nth_group, GROUP_NUMBER};
 use crate::libs::generate_key_for_nth_group::generate_key_nth_group;
 use crate::generate_key_for_nth_group::get_key_nth_group;
@@ -57,7 +59,7 @@ pub async fn new(
     secret_key_seed: Option<u8>,
     group: Option<u64>,
     is_provider: bool,
-) -> Result<(Client, impl Stream<Item=Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
+) -> Result<(Arc<Mutex<Client>>, impl Stream<Item=Event>, EventLoop, PeerId, u64), Box<dyn Error>> {
     // Create a public/private key pair, either random or based on a seed.
     let id_keys = match secret_key_seed {
         Some(seed) => {
@@ -147,9 +149,9 @@ pub async fn new(
     let (event_sender, event_receiver) = mpsc::channel(0);
 
     Ok((
-        Client {
+        Arc::new(Mutex::new(Client {
             sender: command_sender,
-        },
+        })),
         event_receiver,
         EventLoop::new(Box::new(swarm), command_receiver, event_sender),
         peer_id,
@@ -353,7 +355,7 @@ impl EventLoop {
         }
     }
 
-    pub async fn run<T: Middleware>(mut self/*, mut client: Client*/, client: Client, group: u8, contract: Contract<T>) {
+    pub async fn run<T: Middleware>(mut self/*, mut client: Client*/, client: Arc<Mutex<Client>>, group: u8, contract: Contract<T>) {
         let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
         let to_search: PeerId = identity::Keypair::generate_ed25519().public().into();
