@@ -833,6 +833,11 @@ impl EventLoop {
                         .publish(topic, shard)
                         .expect("publish file failed.");
                 }
+
+                let time = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards");
+                println!("Command::UploadShards ends time: {:?}", time);
             }
         }
     }
