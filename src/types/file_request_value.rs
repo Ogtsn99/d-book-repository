@@ -5,6 +5,5 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct FileRequestValue {
     pub file: String,
-    pub address: String,
     pub signature: String,
 }

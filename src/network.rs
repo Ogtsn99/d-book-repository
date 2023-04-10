@@ -705,7 +705,6 @@ impl EventLoop {
                         let signature = wallet.sign_message(peer.to_string()).await.unwrap();
                         let request_value = FileRequestValue {
                             file: file_name.clone(),
-                            address: wallet.address().to_string(),
                             signature: signature.to_string(),
                         };
                         let request_value_string = serde_json::to_string(&request_value).unwrap();
@@ -762,7 +761,6 @@ impl EventLoop {
                         let signature = wallet.sign_message(peer.to_string()).await.unwrap();
                         let request_value = FileRequestValue {
                             file: file_name.clone(),
-                            address: wallet.address().to_string(),
                             signature: signature.to_string(),
                         };
                         let request_value_string = serde_json::to_string(&request_value).unwrap();
@@ -790,7 +788,6 @@ impl EventLoop {
 
                 let request_value = FileRequestValue {
                     file: file_name,
-                    address: wallet.address().to_string(),
                     signature: signature.to_string(),
                 };
 
