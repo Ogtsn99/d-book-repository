@@ -59,13 +59,11 @@ pub async fn provide<T: Middleware+ 'static>(mut network_client: Arc<Mutex<Clien
                 tokio::spawn(async move {
                     let file_request_value: FileRequestValue = serde_json::from_str(&*request).unwrap();
                     let file = file_request_value.file;
-                    let address = file_request_value.address;
                     let signature = Signature::from_str(&*file_request_value.signature).unwrap();
 
                     //println!("{:?}", title);
 
                     println!("file: {}", file);
-                    println!("address: {}", address);
                     println!("signature: {}", signature);
 
                     match signature.recover(peer_id.to_string()) {
