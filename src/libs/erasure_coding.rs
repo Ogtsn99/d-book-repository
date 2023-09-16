@@ -2,11 +2,10 @@ use reed_solomon_erasure;
 use std::{env, fs};
 use std::fs::File;
 use std::io::Read;
-use std::mem::swap;
 use std::time::Instant;
 use reed_solomon_erasure::galois_8::ReedSolomon;
 use sha256;
-use serde::{Serialize, Deserialize};
+use serde::{Serialize};
 use serde_json;
 
 #[derive(Serialize)]
