@@ -27,6 +27,8 @@ rand = "0.8.5"
 reed-solomon-erasure = "5.0.3"
 sha256 = "1.0.3"
 regex = "1.7.0"
+reqwest = "0.11.20"
+tiny-keccak = "2.0.2"
 
 [[default-run]]
 path = "src/main.rs"
@@ -38,3 +40,7 @@ path = "src/main.rs"
 [[bin]]
 name = "erasureCoding"
 path = "src/libs/erasure_coding.rs"
+
+[[bin]]
+name = "incentive-system"
+path = "src/libs/incentive-proof-calc.rs"
