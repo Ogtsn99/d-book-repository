@@ -3,6 +3,7 @@ use std::{fs, io};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Instant;
 use reqwest;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -105,39 +106,39 @@ fn keccak256(data: &[u8]) -> String {
 
 #[tokio::main]
 async fn main() {
-    let block_number = 7; // replace this with desired block number
-    let result = match get_ethereum_block_hash(block_number).await {
-        Ok(hash) => {
-            println!("Block hash for block {}: {}", block_number, hash);
-            Ok(hash)
-        },
-        Err(error) => {
-            println!("Error fetching block hash: {}", error);
-            Err(error)
-        },
-    };
-
-    let block_hash_string = result.unwrap();
-    println!("block_hash_string {}", block_hash_string);
+    let start = Instant::now();
+    // hardhat nodeからブロックハッシュを取ってくる処理をコメントアウト
+    // let block_number = 7; // replace this with desired block number
+    // let result = match get_ethereum_block_hash(block_number).await {
+    //     Ok(hash) => {
+    //         println!("Block hash for block {}: {}", block_number, hash);
+    //         Ok(hash)
+    //     },
+    //     Err(error) => {
+    //         println!("Error fetching block hash: {}", error);
+    //         Err(error)
+    //     },
+    // };
+    //
+    // let block_hash_string = result.unwrap();
+    let block_hash_string: String = "0x1ad1680fb09512d016fadf93996dc6d205efefebc3d9a38ef2aaa09b9689ddac".to_string();
+    // println!("block_hash_string {}", block_hash_string);
 
     // Hexadecimal string to U256
     let block_hash = U256::from_str(&block_hash_string[2..]).expect("Failed to convert hex string to U256");
-    println!("block_hash {:?}", block_hash);
 
     let mut bool_values: Vec<bool> = Vec::new();
     let files_in_storage = get_files("./storage").unwrap();
     for file in files_in_storage {
         let path = format!("storage/{}", file);
-        // println!("{}", path);
-        // println!("{}", get_file_size(&path).unwrap());
         let file_size_bits = U256::from(get_file_size(&path).unwrap() * 8);
         let position = block_hash % file_size_bits;
         let b = get_bit_from_file(&path, position.as_u64() as usize).expect("Failed to get bit from file");
         bool_values.push(b);
     }
     let bytes: Vec<u8> = bool_values.iter().map(|&b| if b { 1 } else { 0 }).collect();
-    let proof = sha256::digest_bytes(&bytes);
-    println!("sha256 hash: {:?}", proof);
-    let hash = keccak256(&bytes);
-    println!("Keccak256 hash: {:?}", hash);
+    let proof = keccak256(&bytes);
+    println!("Keccak256 hash: {:?}", proof);
+    let duration = start.elapsed();
+    println!("Time taken: {:?}", duration);
 }

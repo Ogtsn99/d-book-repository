@@ -5,7 +5,6 @@ use crate::libs::file::get_file_as_byte_vec;
 use crate::network::Client;
 use crate::types::file_upload_value::FileUploadValue;
 use crate::{config, libs};
-
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use libs::erasure_coding;
@@ -32,6 +31,7 @@ pub async fn upload(mut network_client: Arc<Mutex<Client>>, name: String,) {
     let (shards, proofs, root) = erasure_coding::create_shards_and_proofs(content_buffer,REQUIRED_SHARDS as usize, (GROUP_NUMBER - REQUIRED_SHARDS) as usize);
 
     //  TODO: ここでrootをスマコンに登録する？
+    println!("マークルルート: {}", root);
 
     for i in 0_u64..GROUP_NUMBER {
         file_upload_values.push(FileUploadValue {

@@ -168,6 +168,13 @@
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "claim",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "uint256",
@@ -184,6 +191,55 @@
         }
       ],
       "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "answer",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "key",
+          "type": "bytes32"
+        }
+      ],
+      "name": "disclosure",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "event_length",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "peer_id",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "group",
+          "type": "uint256"
+        }
+      ],
+      "name": "forceDispatchNodeForTesting",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -233,7 +289,7 @@
         },
         {
           "internalType": "string",
-          "name": "contentName",
+          "name": "title",
           "type": "string"
         }
       ],
@@ -273,6 +329,13 @@
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "leaveNode",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "string",
@@ -295,7 +358,7 @@
       "inputs": [
         {
           "internalType": "string",
-          "name": "contentName",
+          "name": "title",
           "type": "string"
         },
         {
@@ -307,6 +370,13 @@
       "name": "mint",
       "outputs": [],
       "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "mintDBT",
+      "outputs": [],
+      "stateMutability": "nonpayable",
       "type": "function"
     },
     {
@@ -349,21 +419,16 @@
       "type": "function"
     },
     {
-      "inputs": [
+      "inputs": [],
+      "name": "node_number",
+      "outputs": [
         {
           "internalType": "uint256",
-          "name": "group",
+          "name": "",
           "type": "uint256"
-        },
-        {
-          "internalType": "string",
-          "name": "peer_id",
-          "type": "string"
         }
       ],
-      "name": "node_register",
-      "outputs": [],
-      "stateMutability": "nonpayable",
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -426,7 +491,7 @@
         },
         {
           "internalType": "string",
-          "name": "contentName",
+          "name": "title",
           "type": "string"
         },
         {
@@ -438,6 +503,32 @@
       "name": "register",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "peer_id",
+          "type": "string"
+        }
+      ],
+      "name": "registerNode",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "registration_fee",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -537,6 +628,19 @@
     {
       "inputs": [
         {
+          "internalType": "address",
+          "name": "_dbt",
+          "type": "address"
+        }
+      ],
+      "name": "setDBookToken",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "string",
           "name": "contentName",
           "type": "string"
@@ -548,6 +652,19 @@
         }
       ],
       "name": "setPrice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "block_num",
+          "type": "uint256"
+        }
+      ],
+      "name": "set_virtual_block_num",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"
@@ -637,6 +754,32 @@
       "name": "transferOwnership",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "v_block_num",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "encrypted_answer",
+          "type": "bytes32"
+        }
+      ],
+      "name": "vote",
+      "outputs": [],
+      "stateMutability": "payable",
       "type": "function"
     }
   ]

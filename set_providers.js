@@ -1,5 +1,8 @@
 const { exec } = require('child_process')
 
+// 1. hardhat nodeを起動し、ACCをデプロイ
+// 2. cargo run --release -- --listen-address /ip4/127.0.0.1/tcp/40837 --group 0 provide
+// 3. node set_provider.js
 async function main() {
     let nodeEndpoints = ["/ip4/127.0.0.1/tcp/40837/p2p/12D3KooWCxnyz1JxC9y1RniRQVFe2cLaLHsYNc2SnXbM7yq5JBbJ"];
     let port = 40838;
@@ -14,9 +17,6 @@ async function main() {
             console.log(`stdout: ${stdout}`)
         }
     )*/
-
-    const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-    await _sleep(2000);
 
     for (let i = 0; i < 40; i++) {
 
